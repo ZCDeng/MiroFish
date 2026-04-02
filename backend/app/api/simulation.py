@@ -1,6 +1,6 @@
 """
 模拟相关API路由
-Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化）
+Step2: Graphiti实体读取与过滤、OASIS模拟准备与运行（全程自动化）
 """
 
 import os
@@ -9,7 +9,7 @@ from flask import request, jsonify, send_file
 
 from . import simulation_bp
 from ..config import Config
-from ..services.zep_entity_reader import ZepEntityReader
+from ..services.graphiti_entity_reader import GraphitiEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
@@ -56,10 +56,10 @@ def get_graph_entities(graph_id: str):
         enrich: 是否获取相关边信息（默认true）
     """
     try:
-        if not Config.ZEP_API_KEY:
+        if not Config.NEO4J_URI:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY未配置"
+                "error": "NEO4J_URI未配置"
             }), 500
         
         entity_types_str = request.args.get('entity_types', '')
@@ -68,7 +68,7 @@ def get_graph_entities(graph_id: str):
         
         logger.info(f"获取图谱实体: graph_id={graph_id}, entity_types={entity_types}, enrich={enrich}")
         
-        reader = ZepEntityReader()
+        reader = GraphitiEntityReader()
         result = reader.filter_defined_entities(
             graph_id=graph_id,
             defined_entity_types=entity_types,
@@ -93,13 +93,13 @@ def get_graph_entities(graph_id: str):
 def get_entity_detail(graph_id: str, entity_uuid: str):
     """获取单个实体的详细信息"""
     try:
-        if not Config.ZEP_API_KEY:
+        if not Config.NEO4J_URI:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY未配置"
+                "error": "NEO4J_URI未配置"
             }), 500
         
-        reader = ZepEntityReader()
+        reader = GraphitiEntityReader()
         entity = reader.get_entity_with_context(graph_id, entity_uuid)
         
         if not entity:
@@ -126,15 +126,15 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
 def get_entities_by_type(graph_id: str, entity_type: str):
     """获取指定类型的所有实体"""
     try:
-        if not Config.ZEP_API_KEY:
+        if not Config.NEO4J_URI:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY未配置"
+                "error": "NEO4J_URI未配置"
             }), 500
         
         enrich = request.args.get('enrich', 'true').lower() == 'true'
         
-        reader = ZepEntityReader()
+        reader = GraphitiEntityReader()
         entities = reader.get_entities_by_type(
             graph_id=graph_id,
             entity_type=entity_type,
@@ -370,7 +370,7 @@ def prepare_simulation():
     
     步骤：
     1. 检查是否已有完成的准备工作
-    2. 从Zep图谱读取并过滤实体
+    2. 从Graphiti图谱读取并过滤实体
     3. 为每个实体生成OASIS Agent Profile（带重试机制）
     4. LLM智能生成模拟配置（带重试机制）
     5. 保存配置文件和预设脚本
@@ -471,7 +471,7 @@ def prepare_simulation():
         # 这样前端在调用prepare后立即就能获取到预期Agent总数
         try:
             logger.info(f"同步获取实体数量: graph_id={state.graph_id}")
-            reader = ZepEntityReader()
+            reader = GraphitiEntityReader()
             # 快速读取实体（不需要边信息，只统计数量）
             filtered_preview = reader.filter_defined_entities(
                 graph_id=state.graph_id,
@@ -1396,7 +1396,7 @@ def generate_profiles():
         use_llm = data.get('use_llm', True)
         platform = data.get('platform', 'reddit')
         
-        reader = ZepEntityReader()
+        reader = GraphitiEntityReader()
         filtered = reader.filter_defined_entities(
             graph_id=graph_id,
             defined_entity_types=entity_types,
@@ -1453,7 +1453,7 @@ def start_simulation():
             "simulation_id": "sim_xxxx",          // 必填，模拟ID
             "platform": "parallel",                // 可选: twitter / reddit / parallel (默认)
             "max_rounds": 100,                     // 可选: 最大模拟轮数，用于截断过长的模拟
-            "enable_graph_memory_update": false,   // 可选: 是否将Agent活动动态更新到Zep图谱记忆
+            "enable_graph_memory_update": false,   // 可选: 是否将Agent活动动态更新到Graphiti图谱记忆
             "force": false                         // 可选: 强制重新开始（会停止运行中的模拟并清理日志）
         }
 
@@ -1464,7 +1464,7 @@ def start_simulation():
         - 适用于需要重新运行模拟的场景
 
     关于 enable_graph_memory_update：
-        - 启用后，模拟中所有Agent的活动（发帖、评论、点赞等）都会实时更新到Zep图谱
+        - 启用后，模拟中所有Agent的活动（发帖、评论、点赞等）都会实时更新到Graphiti图谱
         - 这可以让图谱"记住"模拟过程，用于后续分析或AI对话
         - 需要模拟关联的项目有有效的 graph_id
         - 采用批量更新机制，减少API调用次数

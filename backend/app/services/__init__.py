@@ -5,28 +5,28 @@
 from .ontology_generator import OntologyGenerator
 from .graph_builder import GraphBuilderService
 from .text_processor import TextProcessor
-from .zep_entity_reader import ZepEntityReader, EntityNode, FilteredEntities
+from .graphiti_entity_reader import GraphitiEntityReader, EntityNode, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_manager import SimulationManager, SimulationState, SimulationStatus
 from .simulation_config_generator import (
-    SimulationConfigGenerator, 
+    SimulationConfigGenerator,
     SimulationParameters,
     AgentActivityConfig,
     TimeSimulationConfig,
     EventConfig,
-    PlatformConfig
+    PlatformConfig,
 )
 from .simulation_runner import (
     SimulationRunner,
     SimulationRunState,
     RunnerStatus,
     AgentAction,
-    RoundSummary
+    RoundSummary,
 )
-from .zep_graph_memory_updater import (
-    ZepGraphMemoryUpdater,
-    ZepGraphMemoryManager,
-    AgentActivity
+from .graphiti_memory_updater import (
+    GraphitiMemoryUpdater,
+    GraphitiMemoryManager,
+    AgentActivity,
 )
 from .simulation_ipc import (
     SimulationIPCClient,
@@ -34,40 +34,39 @@ from .simulation_ipc import (
     IPCCommand,
     IPCResponse,
     CommandType,
-    CommandStatus
+    CommandStatus,
 )
 
 __all__ = [
-    'OntologyGenerator', 
-    'GraphBuilderService', 
-    'TextProcessor',
-    'ZepEntityReader',
-    'EntityNode',
-    'FilteredEntities',
-    'OasisProfileGenerator',
-    'OasisAgentProfile',
-    'SimulationManager',
-    'SimulationState',
-    'SimulationStatus',
-    'SimulationConfigGenerator',
-    'SimulationParameters',
-    'AgentActivityConfig',
-    'TimeSimulationConfig',
-    'EventConfig',
-    'PlatformConfig',
-    'SimulationRunner',
-    'SimulationRunState',
-    'RunnerStatus',
-    'AgentAction',
-    'RoundSummary',
-    'ZepGraphMemoryUpdater',
-    'ZepGraphMemoryManager',
-    'AgentActivity',
-    'SimulationIPCClient',
-    'SimulationIPCServer',
-    'IPCCommand',
-    'IPCResponse',
-    'CommandType',
-    'CommandStatus',
+    "OntologyGenerator",
+    "GraphBuilderService",
+    "TextProcessor",
+    "GraphitiEntityReader",
+    "EntityNode",
+    "FilteredEntities",
+    "OasisProfileGenerator",
+    "OasisAgentProfile",
+    "SimulationManager",
+    "SimulationState",
+    "SimulationStatus",
+    "SimulationConfigGenerator",
+    "SimulationParameters",
+    "AgentActivityConfig",
+    "TimeSimulationConfig",
+    "EventConfig",
+    "PlatformConfig",
+    "SimulationRunner",
+    "SimulationRunState",
+    "RunnerStatus",
+    "AgentAction",
+    "RoundSummary",
+    "GraphitiMemoryUpdater",
+    "GraphitiMemoryManager",
+    "AgentActivity",
+    "SimulationIPCClient",
+    "SimulationIPCServer",
+    "IPCCommand",
+    "IPCResponse",
+    "CommandType",
+    "CommandStatus",
 ]
-
