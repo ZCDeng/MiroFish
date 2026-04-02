@@ -57,7 +57,13 @@ backend/logs/
 backend/uploads/
 
 # Docker 数据
-data/# UI artifacts
+data/
+
+# UI artifacts
 frontend/playwright-report/
 frontend/test-results/
 node_modules/
+
+# 生成文件
+docker/
+docs/
