@@ -385,7 +385,9 @@ def build_graph():
                 total_chunks = len(chunks)
 
                 # 创建图谱
-                task_manager.update_task(task_id, message="创建Graphiti图谱...", progress=10)
+                task_manager.update_task(
+                    task_id, message="创建Graphiti图谱...", progress=10
+                )
                 graph_id = builder.create_graph(name=graph_name)
 
                 # 更新项目的graph_id
@@ -516,9 +518,7 @@ def list_tasks():
     """
     tasks = TaskManager().list_tasks()
 
-    return jsonify(
-        {"success": True, "data": [t.to_dict() for t in tasks], "count": len(tasks)}
-    )
+    return jsonify({"success": True, "data": tasks, "count": len(tasks)})
 
 
 # ============== 图谱数据接口 ==============
