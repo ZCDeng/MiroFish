@@ -14,13 +14,17 @@ from datetime import datetime
 
 from graphiti_core import Graphiti
 from graphiti_core.utils.bulk_utils import RawEpisode
-from graphiti_core.exceptions import NodeNotFoundError
+from graphiti_core.errors import NodeNotFoundError
 from graphiti_core.nodes import EpisodeType
 from pydantic import BaseModel, Field
 
 from ..config import Config
 from ..models.task import TaskManager, TaskStatus
+from ..utils.logger import get_logger
 from .text_processor import TextProcessor
+
+
+logger = get_logger("mirofish.graph")
 
 
 @dataclass
@@ -252,23 +256,25 @@ class GraphBuilderService:
                             progress,
                         )
 
-                    # Graphiti add_episode_bulk doesn't take entity_types, so we use add_episode sequentially
-        for j, chunk in enumerate(batch_chunks):
-            try:
-                ep_uuid = str(uuid.uuid4())
-                await client.add_episode(
-                    name=f"Chunk {i * chunks_per_batch + j + 1}",
-                    episode_body=chunk,
-                    source_description="Text chunk",
-                    reference_time=datetime.now(),
-                    source=EpisodeType.TEXT_CHUNK,
-                    graph_id=graph_id,
-                    entity_types=entity_types,
-                )
-                episode_uuids.append(ep_uuid)
-            except NodeNotFoundError as e:
-                logger.warning(f"NodeNotFoundError in batch {i}, chunk {j}: {e}. Continuing with remaining chunks.")
-                continue
+                    for j, chunk in enumerate(batch_chunks):
+                        try:
+                            ep_uuid = str(uuid.uuid4())
+                            await client.add_episode(
+                                name=f"Chunk {i + j + 1}",
+                                episode_body=chunk,
+                                source_description="Text chunk",
+                                reference_time=datetime.now(),
+                                source=EpisodeType.TEXT_CHUNK,
+                                graph_id=graph_id,
+                                entity_types=entity_types,
+                            )
+                            episode_uuids.append(ep_uuid)
+                        except NodeNotFoundError as e:
+                            logger.warning(
+                                f"NodeNotFoundError in batch {batch_num}, chunk {j + 1}: {e}. "
+                                "Continuing with remaining chunks."
+                            )
+                            continue
             finally:
                 await client.close()
 
