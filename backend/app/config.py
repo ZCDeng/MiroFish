@@ -60,7 +60,7 @@ class Config:
     GRAPHITI_MAX_ENTITY_ATTRIBUTES = int(
         os.environ.get("GRAPHITI_MAX_ENTITY_ATTRIBUTES", "3")
     )
-    GRAPHITI_MAX_TOKENS = int(os.environ.get("GRAPHITI_MAX_TOKENS", "1024"))
+    GRAPHITI_MAX_TOKENS = int(os.environ.get("GRAPHITI_MAX_TOKENS", "8192"))
 
     # Neo4j / Graphiti配置
     NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
