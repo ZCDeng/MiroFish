@@ -185,41 +185,49 @@ class GraphitiMemoryUpdater:
     """
     Graphiti图谱记忆更新器
     """
-    
-    BATCH_SIZE = 5
+
+    BATCH_SIZE = 20  # 从5提高到20：减少4x API调用次数
     PLATFORM_DISPLAY_NAMES = {
         'twitter': '世界1',
         'reddit': '世界2',
     }
-    SEND_INTERVAL = 0.5
+    SEND_INTERVAL = 3.0  # 从0.5提高到3s：避免速率限制
     MAX_RETRIES = 3
-    RETRY_DELAY = 2
+    RETRY_DELAY = 5  # 从2提高到5s：给API更多恢复时间
+
+    # 只有内容类 action 才有语义价值，行为类（点赞/搜索/关注）跳过
+    MEANINGFUL_ACTIONS = {
+        "CREATE_POST", "CREATE_COMMENT", "QUOTE_POST", "REPOST"
+    }
     
     def __init__(self, graph_id: str):
         self.graph_id = graph_id
         self.neo4j_uri = Config.NEO4J_URI
         self.neo4j_user = Config.NEO4J_USER
         self.neo4j_password = Config.NEO4J_PASSWORD
-        
+
         if not self.neo4j_uri:
             raise ValueError("NEO4J_URI未配置")
-        
+
         self._activity_queue: Queue = Queue()
         self._platform_buffers: Dict[str, List[AgentActivity]] = {
             'twitter': [],
             'reddit': [],
         }
         self._buffer_lock = threading.Lock()
-        
+
         self._running = False
         self._worker_thread: Optional[threading.Thread] = None
-        
+
+        # 复用 event loop，避免每个 batch 都创建/销毁，降低连接开销
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
         self._total_activities = 0
         self._total_sent = 0
         self._total_items_sent = 0
         self._failed_count = 0
         self._skipped_count = 0
-        
+
         logger.info(f"GraphitiMemoryUpdater 初始化完成: graph_id={graph_id}, batch_size={self.BATCH_SIZE}")
     
     def _get_client(self) -> Graphiti:
@@ -235,8 +243,10 @@ class GraphitiMemoryUpdater:
     def start(self):
         if self._running:
             return
-        
+
         self._running = True
+        # 在 worker 线程内创建并复用 event loop
+        self._loop = asyncio.new_event_loop()
         self._worker_thread = threading.Thread(
             target=self._worker_loop,
             daemon=True,
@@ -248,10 +258,13 @@ class GraphitiMemoryUpdater:
     def stop(self):
         self._running = False
         self._flush_remaining()
-        
+
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=10)
-        
+
+        if self._loop and not self._loop.is_closed():
+            self._loop.close()
+
         logger.info(f"GraphitiMemoryUpdater 已停止: graph_id={self.graph_id}, "
                    f"total_activities={self._total_activities}, "
                    f"batches_sent={self._total_sent}, "
@@ -260,10 +273,11 @@ class GraphitiMemoryUpdater:
                    f"skipped={self._skipped_count}")
     
     def add_activity(self, activity: AgentActivity):
-        if activity.action_type == "DO_NOTHING":
+        # 只保留有内容语义价值的 action，行为类（点赞/关注/搜索等）跳过
+        if activity.action_type not in self.MEANINGFUL_ACTIONS:
             self._skipped_count += 1
             return
-        
+
         self._activity_queue.put(activity)
         self._total_activities += 1
         logger.debug(f"添加活动到Graphiti队列: {activity.agent_name} - {activity.action_type}")
@@ -285,6 +299,8 @@ class GraphitiMemoryUpdater:
         self.add_activity(activity)
     
     def _worker_loop(self):
+        # 在当前线程中运行复用的 event loop
+        asyncio.set_event_loop(self._loop)
         while self._running or not self._activity_queue.empty():
             try:
                 try:
@@ -294,7 +310,7 @@ class GraphitiMemoryUpdater:
                         if platform not in self._platform_buffers:
                             self._platform_buffers[platform] = []
                         self._platform_buffers[platform].append(activity)
-                        
+
                         if len(self._platform_buffers[platform]) >= self.BATCH_SIZE:
                             batch = self._platform_buffers[platform][:self.BATCH_SIZE]
                             self._platform_buffers[platform] = self._platform_buffers[platform][self.BATCH_SIZE:]
@@ -329,8 +345,9 @@ class GraphitiMemoryUpdater:
                 
         for attempt in range(self.MAX_RETRIES):
             try:
-                asyncio.run(_send())
-                
+                # 复用已有 event loop，不每次重建
+                self._loop.run_until_complete(_send())
+
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
                 display_name = self._get_platform_display_name(platform)

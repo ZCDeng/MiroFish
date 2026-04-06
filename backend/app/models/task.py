@@ -3,6 +3,8 @@
 用于跟踪长时间运行的任务（如图谱构建）
 """
 
+import os
+import json
 import uuid
 import threading
 from datetime import datetime
@@ -54,21 +56,76 @@ class Task:
 class TaskManager:
     """
     任务管理器
-    线程安全的任务状态管理
+    线程安全的任务状态管理，支持文件持久化
     """
-    
+
+    # 任务文件存储目录（相对于 backend/app/models/task.py 向上两级到 backend/）
+    TASKS_DIR = os.path.join(os.path.dirname(__file__), "../../uploads/tasks")
+
     _instance = None
     _lock = threading.Lock()
-    
+
     def __new__(cls):
-        """单例模式"""
+        """单例模式，初始化时从磁盘加载任务"""
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
                     cls._instance._tasks: Dict[str, Task] = {}
                     cls._instance._task_lock = threading.Lock()
+                    cls._instance._load_tasks_from_disk()
         return cls._instance
+
+    def _load_tasks_from_disk(self):
+        """启动时从磁盘加载持久化任务，将未完成任务标记为失败"""
+        tasks_dir = os.path.normpath(self.TASKS_DIR)
+        if not os.path.exists(tasks_dir):
+            return
+        for filename in os.listdir(tasks_dir):
+            if not filename.endswith(".json"):
+                continue
+            path = os.path.join(tasks_dir, filename)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                task = Task(
+                    task_id=data["task_id"],
+                    task_type=data["task_type"],
+                    status=TaskStatus(data["status"]),
+                    created_at=datetime.fromisoformat(data["created_at"]),
+                    updated_at=datetime.fromisoformat(data["updated_at"]),
+                    progress=data.get("progress", 0),
+                    message=data.get("message", ""),
+                    result=data.get("result"),
+                    error=data.get("error"),
+                    metadata=data.get("metadata", {}),
+                    progress_detail=data.get("progress_detail", {}),
+                )
+                # 服务重启时，将仍处于进行中的任务标记为失败
+                if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+                    task.status = TaskStatus.FAILED
+                    task.error = "服务重启导致任务中断"
+                    task.updated_at = datetime.now()
+                    self._save_task_to_disk(task)
+                self._tasks[task.task_id] = task
+            except Exception:
+                pass  # 损坏的文件跳过，不影响启动
+
+    def _save_task_to_disk(self, task: Task):
+        """将单个任务写入磁盘"""
+        tasks_dir = os.path.normpath(self.TASKS_DIR)
+        os.makedirs(tasks_dir, exist_ok=True)
+        path = os.path.join(tasks_dir, f"{task.task_id}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(task.to_dict(), f, ensure_ascii=False, indent=2)
+
+    def _delete_task_from_disk(self, task_id: str):
+        """从磁盘删除任务文件"""
+        path = os.path.join(os.path.normpath(self.TASKS_DIR), f"{task_id}.json")
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
     
     def create_task(self, task_type: str, metadata: Optional[Dict] = None) -> str:
         """
@@ -95,7 +152,8 @@ class TaskManager:
         
         with self._task_lock:
             self._tasks[task_id] = task
-        
+            self._save_task_to_disk(task)
+
         return task_id
     
     def get_task(self, task_id: str) -> Optional[Task]:
@@ -141,6 +199,7 @@ class TaskManager:
                     task.error = error
                 if progress_detail is not None:
                     task.progress_detail = progress_detail
+                self._save_task_to_disk(task)
     
     def complete_task(self, task_id: str, result: Dict):
         """标记任务完成"""
@@ -181,4 +240,5 @@ class TaskManager:
             ]
             for tid in old_ids:
                 del self._tasks[tid]
+                self._delete_task_from_disk(tid)
 

@@ -23,6 +23,10 @@ RUN npm ci \
 # 复制项目源码
 COPY . .
 
+# Patch Graphiti 0.11.6: filter non-primitive attributes + max_completion_tokens for GPT-5.x
+COPY backend/patched_node_operations.py /app/backend/.venv/lib/python3.11/site-packages/graphiti_core/utils/maintenance/node_operations.py
+COPY backend/patched_openai_generic_client.py /app/backend/.venv/lib/python3.11/site-packages/graphiti_core/llm_client/openai_generic_client.py
+
 EXPOSE 3000 5002
 
 # 同时启动前后端（开发模式）

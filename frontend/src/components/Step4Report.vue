@@ -128,6 +128,9 @@
           </div>
 
           <!-- Next Step Button - 在完成后显示 -->
+          <div v-if="isComplete && autoActive" class="auto-advance-hint">
+            {{ autoCountdown }}s 后自动进入深度互动 <span class="cancel-link" @click="cancelAuto">取消</span>
+          </div>
           <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
             <span>进入深度互动</span>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -390,8 +393,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive, toRef } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAutoAdvance } from '../composables/useAutoAdvance'
 import { getAgentLog, getConsoleLog } from '../api/report'
 
 const router = useRouter()
@@ -399,7 +403,8 @@ const router = useRouter()
 const props = defineProps({
   reportId: String,
   simulationId: String,
-  systemLogs: Array
+  systemLogs: Array,
+  autoAdvance: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['add-log', 'update-status'])
@@ -423,6 +428,15 @@ const expandedContent = ref(new Set())
 const expandedLogs = ref(new Set())
 const collapsedSections = ref(new Set())
 const isComplete = ref(false)
+
+// 自动推进（需在 isComplete 定义后）
+const autoAdvanceEnabled = toRef(props, 'autoAdvance')
+const { countdown: autoCountdown, active: autoActive, cancel: cancelAuto } = useAutoAdvance(
+  () => isComplete.value,
+  () => goToInteraction(),
+  { enabled: autoAdvanceEnabled, watchSources: [isComplete] }
+)
+
 const startTime = ref(null)
 const leftPanel = ref(null)
 const rightPanel = ref(null)
@@ -5147,4 +5161,17 @@ watch(() => props.reportId, (newId) => {
 .log-msg.error { color: #EF5350; }
 .log-msg.warning { color: #FFA726; }
 .log-msg.success { color: #66BB6A; }
+
+.auto-advance-hint {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.auto-advance-hint .cancel-link {
+  cursor: pointer;
+  color: #e57373;
+  text-decoration: underline;
+  margin-left: 6px;
+}
 </style>

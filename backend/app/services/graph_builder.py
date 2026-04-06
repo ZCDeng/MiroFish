@@ -3,28 +3,141 @@
 接口2：使用Graphiti API构建Standalone Graph
 """
 
-import os
 import uuid
-import time
 import threading
 import asyncio
-from typing import Dict, Any, List, Optional, Callable
+import hashlib
+import json
+import re
+from typing import Dict, Any, List, Optional, Callable, cast
 from dataclasses import dataclass
 from datetime import datetime
 
+import openai
+from ..config import Config
+from openai import AsyncOpenAI
 from graphiti_core import Graphiti
-from graphiti_core.utils.bulk_utils import RawEpisode
-from graphiti_core.errors import NodeNotFoundError
+from graphiti_core.cross_encoder.client import CrossEncoderClient
+from graphiti_core.embedder.client import EmbedderClient
+from graphiti_core.errors import GraphitiError, NodeNotFoundError
+from graphiti_core.llm_client.config import LLMConfig
+from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 from graphiti_core.nodes import EpisodeType
 from pydantic import BaseModel, Field
 
-from ..config import Config
 from ..models.task import TaskManager, TaskStatus
 from ..utils.logger import get_logger
 from .text_processor import TextProcessor
 
 
 logger = get_logger("mirofish.graph")
+
+
+class FallbackCrossEncoder(CrossEncoderClient):
+    async def rank(self, query: str, passages: List[str]) -> List[tuple[str, float]]:
+        total = max(len(passages), 1)
+        return [
+            (p, float(total - idx) / float(total)) for idx, p in enumerate(passages)
+        ]
+
+
+class FallbackEmbedder(EmbedderClient):
+    async def create(self, input_data) -> List[float]:
+        if not isinstance(input_data, str):
+            input_data = str(input_data)
+
+        buf = bytearray()
+        seed = input_data.encode("utf-8", errors="ignore")
+        counter = 0
+        while len(buf) < 1024:
+            h = hashlib.sha256(seed + counter.to_bytes(4, "big")).digest()
+            buf.extend(h)
+            counter += 1
+
+        return [(b / 255.0) * 2.0 - 1.0 for b in buf[:1024]]
+
+    async def create_batch(self, input_data_list: List[str]) -> List[List[float]]:
+        return [await self.create(item) for item in input_data_list]
+
+
+class RobustOpenAIGenericClient(OpenAIGenericClient):
+    MAX_RETRIES = 3
+
+    @staticmethod
+    def _parse_json_content(content: str) -> Optional[Dict[str, Any]]:
+        if not content:
+            return None
+
+        # Strip markdown code fences that GLM often wraps output in
+        text = content.strip()
+        for fence in ("```json", "```"):
+            if text.startswith(fence):
+                text = text[len(fence) :].strip()
+        if text.endswith("```"):
+            text = text[:-3].strip()
+
+        try:
+            parsed = json.loads(text)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            pass
+
+        match = re.search(r"\{[\s\S]*\}", content)
+        if not match:
+            return None
+
+        try:
+            parsed = json.loads(match.group(0))
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+
+    async def _generate_response(
+        self,
+        messages,
+        response_model=None,
+        max_tokens=8192,
+        model_size=None,
+    ):
+        openai_messages = []
+        model_name = self.model or Config.GRAPHITI_MODEL_NAME or "gpt-4o-mini"
+        for m in messages:
+            m.content = self._clean_input(m.content)
+            if m.role == "user":
+                openai_messages.append({"role": "user", "content": m.content})
+            elif m.role == "system":
+                openai_messages.append({"role": "system", "content": m.content})
+
+        api_params = {
+            "model": model_name,
+            "messages": openai_messages,
+            "temperature": self.temperature,
+            "response_format": {"type": "json_object"},
+        }
+        if model_name.startswith(("gpt-5", "o1", "o3", "o4")):
+            api_params["max_completion_tokens"] = self.max_tokens
+        else:
+            api_params["max_tokens"] = self.max_tokens
+
+        last_error = None
+        for attempt in range(self.MAX_RETRIES + 1):
+            try:
+                response = await self.client.chat.completions.create(**api_params)
+                content = response.choices[0].message.content or ""
+                parsed = self._parse_json_content(content)
+                if parsed is not None:
+                    return parsed
+            except openai.RateLimitError as e:
+                raise e
+            except Exception as e:
+                last_error = e
+
+            if attempt < self.MAX_RETRIES:
+                await asyncio.sleep(2**attempt)
+
+        raise ValueError(
+            f"LLM returned non-JSON content after {self.MAX_RETRIES + 1} attempts. Last error: {last_error}"
+        )
 
 
 @dataclass
@@ -62,8 +175,32 @@ class GraphBuilderService:
         self.task_manager = TaskManager()
 
     def _get_client(self) -> Graphiti:
+        llm_config = LLMConfig(
+            api_key=Config.GRAPHITI_API_KEY,
+            base_url=Config.GRAPHITI_BASE_URL,
+            model=Config.GRAPHITI_MODEL_NAME,
+            small_model=Config.GRAPHITI_SMALL_MODEL_NAME,
+            max_tokens=Config.GRAPHITI_MAX_TOKENS,
+        )
+        llm_client = RobustOpenAIGenericClient(
+            config=llm_config,
+            client=AsyncOpenAI(
+                api_key=Config.GRAPHITI_API_KEY,
+                base_url=Config.GRAPHITI_BASE_URL,
+                timeout=Config.GRAPHITI_REQUEST_TIMEOUT,
+                max_retries=Config.GRAPHITI_REQUEST_RETRIES,
+            ),
+        )
+        embedder = FallbackEmbedder()
+        cross_encoder = FallbackCrossEncoder()
+
         return Graphiti(
-            uri=self.neo4j_uri, user=self.neo4j_user, password=self.neo4j_password
+            uri=self.neo4j_uri,
+            user=self.neo4j_user,
+            password=self.neo4j_password,
+            llm_client=llm_client,
+            embedder=embedder,
+            cross_encoder=cross_encoder,
         )
 
     def build_graph_async(
@@ -202,26 +339,44 @@ class GraphBuilderService:
 
     def _parse_ontology_to_entity_types(
         self, ontology: Dict[str, Any]
-    ) -> Dict[str, type[BaseModel]]:
+    ) -> Dict[str, BaseModel]:
         """将本体定义转换为Graphiti需要的Pydantic模型"""
         entity_types = {}
-        for entity_def in ontology.get("entity_types", []):
+        raw_entity_defs = ontology.get("entity_types", [])
+        if not isinstance(raw_entity_defs, list):
+            raw_entity_defs = []
+
+        max_entity_types = max(Config.GRAPHITI_MAX_ENTITY_TYPES, 0)
+        max_entity_attrs = max(Config.GRAPHITI_MAX_ENTITY_ATTRIBUTES, 0)
+        selected_entity_defs = (
+            raw_entity_defs[:max_entity_types]
+            if max_entity_types > 0
+            else raw_entity_defs
+        )
+
+        for entity_def in selected_entity_defs:
             name = entity_def["name"]
             description = entity_def.get("description", f"A {name} entity.")
 
             attrs = {"__doc__": description}
             annotations = {}
 
-            for attr_def in entity_def.get("attributes", []):
+            raw_attrs = entity_def.get("attributes", [])
+            if not isinstance(raw_attrs, list):
+                raw_attrs = []
+            selected_attrs = (
+                raw_attrs[:max_entity_attrs] if max_entity_attrs > 0 else raw_attrs
+            )
+
+            for attr_def in selected_attrs:
                 attr_name = attr_def["name"]
-                attr_desc = attr_def.get("description", attr_name)
-                attrs[attr_name] = Field(description=attr_desc, default=None)
                 annotations[attr_name] = Optional[str]
+                attrs[attr_name] = None
 
             attrs["__annotations__"] = annotations
             entity_class = type(name, (BaseModel,), attrs)
             entity_class.__doc__ = description
-            entity_types[name] = entity_class
+            entity_types[name] = cast(BaseModel, entity_class)
 
         return entity_types
 
@@ -229,12 +384,14 @@ class GraphBuilderService:
         self,
         graph_id: str,
         chunks: List[str],
-        ontology: Dict[str, Any] = None,
-        batch_size: int = 3,
-        progress_callback: Optional[Callable] = None,
+        ontology: Optional[Dict[str, Any]] = None,
+        batch_size: int = 1,
+        progress_callback: Optional[Callable[[str, float], None]] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> List[str]:
         """分批添加文本到图谱"""
         episode_uuids = []
+        failed_chunks = {"count": 0}
         total_chunks = len(chunks)
 
         entity_types = None
@@ -243,8 +400,15 @@ class GraphBuilderService:
 
         async def _add_batches():
             client = self._get_client()
+            episode_timeout = min(
+                Config.GRAPHITI_EPISODE_TIMEOUT,
+                max(Config.GRAPHITI_BUILD_TIMEOUT - 5.0, 5.0),
+            )
             try:
                 for i in range(0, total_chunks, batch_size):
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise TimeoutError("add_text_batches cancelled")
+
                     batch_chunks = chunks[i : i + batch_size]
                     batch_num = i // batch_size + 1
                     total_batches = (total_chunks + batch_size - 1) // batch_size
@@ -257,34 +421,145 @@ class GraphBuilderService:
                         )
 
                     for j, chunk in enumerate(batch_chunks):
-                        try:
-                            ep_uuid = str(uuid.uuid4())
-                            await client.add_episode(
-                                name=f"Chunk {i + j + 1}",
-                                episode_body=chunk,
-                                source_description="Text chunk",
-                                reference_time=datetime.now(),
-                                source=EpisodeType.TEXT_CHUNK,
-                                graph_id=graph_id,
-                                entity_types=entity_types,
-                            )
-                            episode_uuids.append(ep_uuid)
-                        except NodeNotFoundError as e:
-                            logger.warning(
-                                f"NodeNotFoundError in batch {batch_num}, chunk {j + 1}: {e}. "
-                                "Continuing with remaining chunks."
-                            )
+                        if cancel_event is not None and cancel_event.is_set():
+                            raise TimeoutError("add_text_batches cancelled")
+
+                        prepared_chunk = " ".join(chunk.split())
+                        if not prepared_chunk:
+                            failed_chunks["count"] += 1
+                            continue
+
+                        max_chars = max(Config.GRAPHITI_CHUNK_MAX_CHARS, 0)
+                        if max_chars > 0 and len(prepared_chunk) > max_chars:
+                            prepared_chunk = prepared_chunk[:max_chars]
+
+                        max_attempts = max(Config.GRAPHITI_REQUEST_RETRIES + 1, 2)
+                        chunk_done = False
+                        for attempt in range(1, max_attempts + 1):
+                            if cancel_event is not None and cancel_event.is_set():
+                                raise TimeoutError("add_text_batches cancelled")
+
+                            try:
+                                result = await asyncio.wait_for(
+                                    client.add_episode(
+                                        name=f"Chunk {i + j + 1}",
+                                        episode_body=prepared_chunk,
+                                        source_description="Text chunk",
+                                        reference_time=datetime.now(),
+                                        source=EpisodeType.text,
+                                        group_id=graph_id,
+                                        entity_types=entity_types,
+                                    ),
+                                    timeout=episode_timeout,
+                                )
+                                episode_uuids.append(result.episode.uuid)
+                                chunk_done = True
+                                break
+                            except (NodeNotFoundError, GraphitiError) as e:
+                                failed_chunks["count"] += 1
+                                logger.warning(
+                                    f"Graphiti node/data error in batch {batch_num}, chunk {j + 1}: {e}. "
+                                    "Continuing with remaining chunks."
+                                )
+                                break
+                            except asyncio.TimeoutError:
+                                if entity_types is not None:
+                                    try:
+                                        result = await asyncio.wait_for(
+                                            client.add_episode(
+                                                name=f"Chunk {i + j + 1}",
+                                                episode_body=prepared_chunk,
+                                                source_description="Text chunk",
+                                                reference_time=datetime.now(),
+                                                source=EpisodeType.text,
+                                                group_id=graph_id,
+                                                entity_types=None,
+                                            ),
+                                            timeout=episode_timeout,
+                                        )
+                                        episode_uuids.append(result.episode.uuid)
+                                        chunk_done = True
+                                        logger.warning(
+                                            f"Chunk {i + j + 1} retried without ontology after timeout."
+                                        )
+                                        break
+                                    except Exception:
+                                        pass
+
+                                if attempt < max_attempts:
+                                    backoff = float(2 ** (attempt - 1))
+                                    logger.warning(
+                                        f"Episode timeout in batch {batch_num}, chunk {j + 1}, "
+                                        f"attempt {attempt}/{max_attempts}. Retrying in {backoff:.0f}s..."
+                                    )
+                                    await asyncio.sleep(backoff)
+                                    continue
+                                failed_chunks["count"] += 1
+                                logger.warning(
+                                    f"Episode timeout in batch {batch_num}, chunk {j + 1} after {max_attempts} attempts. "
+                                    "Continuing with remaining chunks."
+                                )
+                                break
+                            except Exception as e:
+                                if entity_types is not None and (
+                                    "Property values can only be of primitive types"
+                                    in str(e)
+                                    or "'list' object has no attribute 'get'" in str(e)
+                                ):
+                                    try:
+                                        result = await asyncio.wait_for(
+                                            client.add_episode(
+                                                name=f"Chunk {i + j + 1}",
+                                                episode_body=prepared_chunk,
+                                                source_description="Text chunk",
+                                                reference_time=datetime.now(),
+                                                source=EpisodeType.text,
+                                                group_id=graph_id,
+                                                entity_types=None,
+                                            ),
+                                            timeout=episode_timeout,
+                                        )
+                                        episode_uuids.append(result.episode.uuid)
+                                        chunk_done = True
+                                        logger.warning(
+                                            f"Chunk {i + j + 1} retried without ontology after CypherTypeError."
+                                        )
+                                        break
+                                    except Exception:
+                                        pass
+
+                                if attempt < max_attempts:
+                                    backoff = float(2 ** (attempt - 1))
+                                    logger.warning(
+                                        f"Transient error in batch {batch_num}, chunk {j + 1}, attempt {attempt}/{max_attempts}: "
+                                        f"{type(e).__name__}: {e}. Retrying in {backoff:.0f}s..."
+                                    )
+                                    await asyncio.sleep(backoff)
+                                    continue
+                                failed_chunks["count"] += 1
+                                logger.warning(
+                                    f"Final error in batch {batch_num}, chunk {j + 1}: {type(e).__name__}: {e}. "
+                                    "Continuing with remaining chunks."
+                                )
+                                break
+
+                        if not chunk_done:
                             continue
             finally:
                 await client.close()
 
         asyncio.run(_add_batches())
+        if failed_chunks["count"] == total_chunks and total_chunks > 0:
+            raise RuntimeError(
+                "All chunks failed to be added to graph. "
+                "Check Graphiti/Neo4j state and ontology compatibility."
+            )
         return episode_uuids
 
     def _wait_for_episodes(
         self,
         episode_uuids: List[str],
-        progress_callback: Optional[Callable] = None,
+        progress_callback: Optional[Callable[[str, float], None]] = None,
         timeout: int = 600,
     ):
         """Graphiti add_episode is awaited, so no need to wait here"""
@@ -298,25 +573,23 @@ class GraphBuilderService:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode) WHERE n.group_id = $group_id RETURN count(n) as node_count",
+                    "MATCH (n:Entity) WHERE n.group_id = $group_id RETURN count(n) as node_count",
                     group_id=graph_id,
                 )
                 node_count = records[0]["node_count"] if records else 0
 
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode)-[r:EntityEdge]->(m:EntityNode) WHERE n.group_id = $group_id RETURN count(r) as edge_count",
+                    "MATCH (n:Entity)-[r]->(m:Entity) WHERE n.group_id = $group_id AND n.uuid <> m.uuid RETURN count(r) as edge_count",
                     group_id=graph_id,
                 )
                 edge_count = records[0]["edge_count"] if records else 0
 
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode) WHERE n.group_id = $group_id UNWIND labels(n) AS label RETURN DISTINCT label",
+                    "MATCH (n:Entity) WHERE n.group_id = $group_id UNWIND labels(n) AS label RETURN DISTINCT label",
                     group_id=graph_id,
                 )
                 entity_types = [
-                    r["label"]
-                    for r in records
-                    if r["label"] not in ["EntityNode", "Node"]
+                    r["label"] for r in records if r["label"] not in ["Entity", "Node"]
                 ]
 
                 return GraphInfo(
@@ -339,7 +612,7 @@ class GraphBuilderService:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode) WHERE n.group_id = $group_id RETURN n",
+                    "MATCH (n:Entity) WHERE n.group_id = $group_id RETURN n",
                     group_id=graph_id,
                 )
                 nodes_data = []
@@ -353,15 +626,23 @@ class GraphBuilderService:
                         {
                             "uuid": uuid_,
                             "name": name,
-                            "labels": list(n.labels) if n.labels else [],
+                            "labels": [
+                                l
+                                for l in (list(n.labels) if n.labels else [])
+                                if l != "Entity"
+                            ],
                             "summary": n.get("summary", ""),
-                            "attributes": dict(n),
+                            "attributes": {
+                                k: v
+                                for k, v in dict(n).items()
+                                if isinstance(v, (str, int, float, bool, type(None)))
+                            },
                             "created_at": str(n.get("created_at", "")),
                         }
                     )
 
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode)-[r:EntityEdge]->(m:EntityNode) WHERE n.group_id = $group_id RETURN r, n.uuid AS source_uuid, m.uuid AS target_uuid",
+                    "MATCH (n:Entity)-[r]->(m:Entity) WHERE n.group_id = $group_id AND n.uuid <> m.uuid RETURN r, type(r) AS rel_type, n.uuid AS source_uuid, m.uuid AS target_uuid",
                     group_id=graph_id,
                 )
                 edges_data = []
@@ -372,14 +653,18 @@ class GraphBuilderService:
                     edges_data.append(
                         {
                             "uuid": r.get("uuid", ""),
-                            "name": r.get("name", ""),
+                            "name": record.get("rel_type", ""),
                             "fact": r.get("fact", ""),
-                            "fact_type": r.get("name", ""),
+                            "fact_type": record.get("rel_type", ""),
                             "source_node_uuid": source_uuid,
                             "target_node_uuid": target_uuid,
                             "source_node_name": node_map.get(source_uuid, ""),
                             "target_node_name": node_map.get(target_uuid, ""),
-                            "attributes": dict(r),
+                            "attributes": {
+                                k: v
+                                for k, v in dict(r).items()
+                                if isinstance(v, (str, int, float, bool, type(None)))
+                            },
                             "created_at": str(r.get("created_at", "")),
                             "valid_at": str(r.get("valid_at", "")),
                             "invalid_at": str(r.get("invalid_at", "")),

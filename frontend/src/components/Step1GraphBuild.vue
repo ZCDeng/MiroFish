@@ -158,8 +158,11 @@
         <div class="card-content">
           <p class="api-note">POST /api/simulation/create</p>
           <p class="description">图谱构建已完成，请进入下一步进行模拟环境搭建</p>
-          <button 
-            class="action-btn" 
+          <div v-if="autoActive" class="auto-advance-hint">
+            {{ autoCountdown }}s 后自动进入下一步 <span class="cancel-link" @click="cancelAuto">取消</span>
+          </div>
+          <button
+            class="action-btn"
             :disabled="currentPhase < 2 || creatingSimulation"
             @click="handleEnterEnvSetup"
           >
@@ -187,9 +190,10 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, toRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { createSimulation } from '../api/simulation'
+import { useAutoAdvance } from '../composables/useAutoAdvance'
 
 const router = useRouter()
 
@@ -199,7 +203,8 @@ const props = defineProps({
   ontologyProgress: Object,
   buildProgress: Object,
   graphData: Object,
-  systemLogs: { type: Array, default: () => [] }
+  systemLogs: { type: Array, default: () => [] },
+  autoAdvance: { type: Boolean, default: false }
 })
 
 defineEmits(['next-step'])
@@ -207,6 +212,14 @@ defineEmits(['next-step'])
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+
+// 自动推进
+const autoAdvanceEnabled = toRef(props, 'autoAdvance')
+const { countdown: autoCountdown, active: autoActive, cancel: cancelAuto } = useAutoAdvance(
+  () => props.currentPhase >= 2,
+  () => handleEnterEnvSetup(),
+  { enabled: autoAdvanceEnabled, watchSources: [() => props.currentPhase] }
+)
 
 // 进入环境搭建 - 创建 simulation 并跳转
 const handleEnterEnvSetup = async () => {
@@ -694,5 +707,18 @@ watch(() => props.systemLogs.length, () => {
 .log-msg {
   color: #CCC;
   word-break: break-all;
+}
+
+.auto-advance-hint {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.auto-advance-hint .cancel-link {
+  cursor: pointer;
+  color: #e57373;
+  text-decoration: underline;
+  margin-left: 6px;
 }
 </style>

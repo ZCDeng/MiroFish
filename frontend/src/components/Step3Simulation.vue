@@ -91,13 +91,16 @@
       </div>
 
       <div class="action-controls">
-        <button 
+        <div v-if="autoActive" class="auto-advance-hint">
+          {{ autoCountdown }}s 后自动生成报告 <span class="cancel-link" @click="cancelAuto">取消</span>
+        </div>
+        <button
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
           @click="handleNextStep"
         >
           <span v-if="isGeneratingReport" class="loading-spinner-small"></span>
-          {{ isGeneratingReport ? '启动中...' : '开始生成结果报告' }} 
+          {{ isGeneratingReport ? '启动中...' : '开始生成结果报告' }}
           <span v-if="!isGeneratingReport" class="arrow-icon">→</span>
         </button>
       </div>
@@ -286,8 +289,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, toRef } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAutoAdvance } from '../composables/useAutoAdvance'
 import { 
   startSimulation, 
   stopSimulation,
@@ -305,7 +309,8 @@ const props = defineProps({
   },
   projectData: Object,
   graphData: Object,
-  systemLogs: Array
+  systemLogs: Array,
+  autoAdvance: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
@@ -315,6 +320,14 @@ const router = useRouter()
 // State
 const isGeneratingReport = ref(false)
 const phase = ref(0) // 0: 未开始, 1: 运行中, 2: 已完成
+
+// 自动推进
+const autoAdvanceEnabled = toRef(props, 'autoAdvance')
+const { countdown: autoCountdown, active: autoActive, cancel: cancelAuto } = useAutoAdvance(
+  () => phase.value === 2,
+  () => handleNextStep(),
+  { enabled: autoAdvanceEnabled, watchSources: [phase] }
+)
 const isStarting = ref(false)
 const isStopping = ref(false)
 const startError = ref(null)
@@ -1260,5 +1273,18 @@ onUnmounted(() => {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin-right: 6px;
+}
+
+.auto-advance-hint {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.auto-advance-hint .cancel-link {
+  cursor: pointer;
+  color: #e57373;
+  text-decoration: underline;
+  margin-left: 6px;
 }
 </style>

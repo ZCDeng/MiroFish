@@ -509,14 +509,17 @@
             </Transition>
           </div>
 
+          <div v-if="autoActive" class="auto-advance-hint">
+            {{ autoCountdown }}s 后自动开始模拟 <span class="cancel-link" @click="cancelAuto">取消</span>
+          </div>
           <div class="action-group dual">
-            <button 
+            <button
               class="action-btn secondary"
               @click="$emit('go-back')"
             >
               ← 返回图谱构建
             </button>
-            <button 
+            <button
               class="action-btn primary"
               :disabled="phase < 4"
               @click="handleStartSimulation"
@@ -632,7 +635,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, toRef } from 'vue'
+import { useAutoAdvance } from '../composables/useAutoAdvance'
 import { 
   prepareSimulation, 
   getPrepareStatus, 
@@ -645,7 +649,8 @@ const props = defineProps({
   simulationId: String,  // 从父组件传入
   projectData: Object,
   graphData: Object,
-  systemLogs: Array
+  systemLogs: Array,
+  autoAdvance: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
@@ -736,6 +741,14 @@ const totalTopicsCount = computed(() => {
 const addLog = (msg) => {
   emit('add-log', msg)
 }
+
+// 自动推进
+const autoAdvanceEnabled = toRef(props, 'autoAdvance')
+const { countdown: autoCountdown, active: autoActive, cancel: cancelAuto } = useAutoAdvance(
+  () => phase.value >= 4,
+  () => handleStartSimulation(),
+  { enabled: autoAdvanceEnabled, watchSources: [phase] }
+)
 
 // 处理开始模拟按钮点击
 const handleStartSimulation = () => {
@@ -2598,5 +2611,18 @@ onUnmounted(() => {
 .modal-leave-to .profile-modal {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
+}
+
+.auto-advance-hint {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.auto-advance-hint .cancel-link {
+  cursor: pointer;
+  color: #e57373;
+  text-decoration: underline;
+  margin-left: 6px;
 }
 </style>

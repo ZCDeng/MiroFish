@@ -49,7 +49,7 @@
       <!-- Right Panel: Step Components -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
         <!-- Step 1: 图谱构建 -->
-        <Step1GraphBuild 
+        <Step1GraphBuild
           v-if="currentStep === 1"
           :currentPhase="currentPhase"
           :projectData="projectData"
@@ -57,6 +57,7 @@
           :buildProgress="buildProgress"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          :autoAdvance="true"
           @next-step="handleNextStep"
         />
         <!-- Step 2: 环境搭建 -->
@@ -65,6 +66,7 @@
           :projectData="projectData"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          :autoAdvance="true"
           @go-back="handleGoBack"
           @next-step="handleNextStep"
           @add-log="addLog"

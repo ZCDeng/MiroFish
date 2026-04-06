@@ -56,6 +56,7 @@
           :projectData="projectData"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          :autoAdvance="true"
           @go-back="handleGoBack"
           @next-step="handleNextStep"
           @add-log="addLog"

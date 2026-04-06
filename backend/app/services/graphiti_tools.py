@@ -69,7 +69,7 @@ class NodeInfo:
     
     def to_text(self) -> str:
         """转换为文本格式"""
-        entity_type = next((l for l in self.labels if l not in ["EntityNode", "Node"]), "未知类型")
+        entity_type = next((l for l in self.labels if l not in ["Entity", "Node"]), "未知类型")
         return f"实体: {self.name} (类型: {entity_type})\n摘要: {self.summary}"
 
 
@@ -234,7 +234,7 @@ class PanoramaResult:
         if self.all_nodes:
             text_parts.append(f"\n### 【涉及实体】")
             for node in self.all_nodes:
-                entity_type = next((l for l in node.labels if l not in ["EntityNode", "Node"]), "实体")
+                entity_type = next((l for l in node.labels if l not in ["Entity", "Node"]), "实体")
                 text_parts.append(f"- **{node.name}** ({entity_type})")
         return "\n".join(text_parts)
 
@@ -495,7 +495,7 @@ class GraphitiToolsService:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode) WHERE n.uuid = $uuid RETURN n",
+                    "MATCH (n:Entity) WHERE n.uuid = $uuid RETURN n",
                     uuid=node_uuid
                 )
                 if not records:
@@ -566,7 +566,7 @@ class GraphitiToolsService:
         entity_types = {}
         for node in nodes:
             for label in node.labels:
-                if label not in ["EntityNode", "Node"]:
+                if label not in ["Entity", "Node"]:
                     entity_types[label] = entity_types.get(label, 0) + 1
         
         relation_types = {}
@@ -599,7 +599,7 @@ class GraphitiToolsService:
         
         entities = []
         for node in all_nodes:
-            custom_labels = [l for l in node.labels if l not in ["EntityNode", "Node"]]
+            custom_labels = [l for l in node.labels if l not in ["Entity", "Node"]]
             if custom_labels:
                 entities.append({
                     "name": node.name,
@@ -689,7 +689,7 @@ class GraphitiToolsService:
                 node = self.get_node_detail(uuid)
                 if node:
                     node_map[uuid] = node
-                    entity_type = next((l for l in node.labels if l not in ["EntityNode", "Node"]), "实体")
+                    entity_type = next((l for l in node.labels if l not in ["Entity", "Node"]), "实体")
                     related_facts = [f for f in all_facts if node.name.lower() in f.lower()]
                     entity_insights.append({
                         "uuid": node.uuid,

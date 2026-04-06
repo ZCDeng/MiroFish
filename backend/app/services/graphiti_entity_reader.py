@@ -44,9 +44,9 @@ class EntityNode:
         }
     
     def get_entity_type(self) -> Optional[str]:
-        """获取实体类型（排除默认的EntityNode标签）"""
+        """获取实体类型（排除默认的Entity基础标签）"""
         for label in self.labels:
-            if label not in ["EntityNode", "Node"]:
+            if label not in ["Entity", "Node"]:
                 return label
         return None
 
@@ -96,7 +96,7 @@ class GraphitiEntityReader:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode) WHERE n.group_id = $group_id RETURN n",
+                    "MATCH (n:Entity) WHERE n.group_id = $group_id RETURN n",
                     group_id=graph_id
                 )
                 nodes_data = []
@@ -125,7 +125,7 @@ class GraphitiEntityReader:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode)-[r:EntityEdge]->(m:EntityNode) WHERE n.group_id = $group_id RETURN r, n.uuid AS source_uuid, m.uuid AS target_uuid",
+                    "MATCH (n:Entity)-[r:RELATES_TO]->(m:Entity) WHERE n.group_id = $group_id RETURN r, n.uuid AS source_uuid, m.uuid AS target_uuid",
                     group_id=graph_id
                 )
                 edges_data = []
@@ -153,7 +153,7 @@ class GraphitiEntityReader:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode)-[r:EntityEdge]-(m:EntityNode) WHERE n.uuid = $uuid RETURN r, startNode(r).uuid AS source_uuid, endNode(r).uuid AS target_uuid",
+                    "MATCH (n:Entity)-[r:RELATES_TO]-(m:Entity) WHERE n.uuid = $uuid RETURN r, startNode(r).uuid AS source_uuid, endNode(r).uuid AS target_uuid",
                     uuid=node_uuid
                 )
                 edges_data = []
@@ -197,18 +197,21 @@ class GraphitiEntityReader:
         
         for node in all_nodes:
             labels = node.get("labels", [])
-            custom_labels = [l for l in labels if l not in ["EntityNode", "Node"]]
-            
-            if not custom_labels:
+            custom_labels = [l for l in labels if l not in ["Entity", "Node"]]
+
+            # 没有子类型时，用基础 Entity 类型
+            effective_labels = custom_labels if custom_labels else (["Entity"] if "Entity" in labels else [])
+
+            if not effective_labels:
                 continue
-            
+
             if defined_entity_types:
-                matching_labels = [l for l in custom_labels if l in defined_entity_types]
+                matching_labels = [l for l in effective_labels if l in defined_entity_types]
                 if not matching_labels:
                     continue
                 entity_type = matching_labels[0]
             else:
-                entity_type = custom_labels[0]
+                entity_type = effective_labels[0]
             
             entity_types_found.add(entity_type)
             
@@ -279,7 +282,7 @@ class GraphitiEntityReader:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:EntityNode) WHERE n.uuid = $uuid RETURN n",
+                    "MATCH (n:Entity) WHERE n.uuid = $uuid RETURN n",
                     uuid=entity_uuid
                 )
                 if not records:

@@ -16,6 +16,10 @@ else:
     # 如果根目录没有 .env，尝试加载环境变量（用于生产环境）
     load_dotenv(override=True)
 
+os.environ.setdefault(
+    "SEMAPHORE_LIMIT", os.environ.get("GRAPHITI_SEMAPHORE_LIMIT", "5")
+)
+
 
 class Config:
     """Flask配置类"""
@@ -31,6 +35,32 @@ class Config:
     LLM_API_KEY = os.environ.get("LLM_API_KEY")
     LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
     LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-4o-mini")
+
+    GRAPHITI_API_KEY = os.environ.get("GRAPHITI_API_KEY", LLM_API_KEY)
+    GRAPHITI_BASE_URL = os.environ.get("GRAPHITI_BASE_URL", LLM_BASE_URL)
+    GRAPHITI_MODEL_NAME = os.environ.get("GRAPHITI_MODEL_NAME", LLM_MODEL_NAME)
+    GRAPHITI_SMALL_MODEL_NAME = os.environ.get(
+        "GRAPHITI_SMALL_MODEL_NAME", GRAPHITI_MODEL_NAME
+    )
+    GRAPHITI_REQUEST_TIMEOUT = float(os.environ.get("GRAPHITI_REQUEST_TIMEOUT", "30"))
+    GRAPHITI_REQUEST_RETRIES = int(os.environ.get("GRAPHITI_REQUEST_RETRIES", "1"))
+    GRAPHITI_EPISODE_TIMEOUT = float(os.environ.get("GRAPHITI_EPISODE_TIMEOUT", "25"))
+    GRAPHITI_SEMAPHORE_LIMIT = int(os.environ.get("GRAPHITI_SEMAPHORE_LIMIT", "5"))
+    GRAPHITI_BUILD_TIMEOUT = float(os.environ.get("GRAPHITI_BUILD_TIMEOUT", "120"))
+    GRAPHITI_BUILD_TIMEOUT_CAP = float(
+        os.environ.get("GRAPHITI_BUILD_TIMEOUT_CAP", "1800")
+    )
+    GRAPHITI_BATCH_SIZE = int(os.environ.get("GRAPHITI_BATCH_SIZE", "1"))
+    GRAPHITI_CHUNK_MAX_CHARS = int(os.environ.get("GRAPHITI_CHUNK_MAX_CHARS", "1200"))
+    GRAPHITI_MAX_CHUNKS = int(os.environ.get("GRAPHITI_MAX_CHUNKS", "10"))
+    GRAPHITI_ONTOLOGY_CHUNK_THRESHOLD = int(
+        os.environ.get("GRAPHITI_ONTOLOGY_CHUNK_THRESHOLD", "40")
+    )
+    GRAPHITI_MAX_ENTITY_TYPES = int(os.environ.get("GRAPHITI_MAX_ENTITY_TYPES", "6"))
+    GRAPHITI_MAX_ENTITY_ATTRIBUTES = int(
+        os.environ.get("GRAPHITI_MAX_ENTITY_ATTRIBUTES", "3")
+    )
+    GRAPHITI_MAX_TOKENS = int(os.environ.get("GRAPHITI_MAX_TOKENS", "1024"))
 
     # Neo4j / Graphiti配置
     NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
@@ -97,4 +127,6 @@ class Config:
             errors.append("NEO4J_URI 未配置")
         if not cls.OPENAI_API_KEY:
             errors.append("OPENAI_API_KEY 未配置")
+        if not cls.GRAPHITI_API_KEY:
+            errors.append("GRAPHITI_API_KEY 未配置")
         return errors

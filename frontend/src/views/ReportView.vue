@@ -53,6 +53,7 @@
           :reportId="currentReportId"
           :simulationId="simulationId"
           :systemLogs="systemLogs"
+          :autoAdvance="true"
           @add-log="addLog"
           @update-status="updateStatus"
         />

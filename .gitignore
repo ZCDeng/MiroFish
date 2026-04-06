@@ -67,3 +67,8 @@ node_modules/
 # 生成文件
 docker/
 docs/
+
+# 临时调试脚本
+backend/patched_*.py
+smoke_doc.txt
+tiny_doc.txt

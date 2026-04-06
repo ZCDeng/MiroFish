@@ -6,6 +6,7 @@
 import os
 import traceback
 import threading
+from queue import Queue, Empty
 from flask import request, jsonify
 
 from . import graph_bp
@@ -382,6 +383,25 @@ def build_graph():
                 chunks = TextProcessor.split_text(
                     text, chunk_size=chunk_size, overlap=chunk_overlap
                 )
+                max_chunks = max(Config.GRAPHITI_MAX_CHUNKS, 0)
+                if max_chunks > 0 and len(chunks) > max_chunks:
+                    adaptive_chunk_size = max(
+                        chunk_size,
+                        (len(text) // max_chunks) + max(chunk_overlap, 0) + 1,
+                    )
+                    chunks = TextProcessor.split_text(
+                        text,
+                        chunk_size=adaptive_chunk_size,
+                        overlap=chunk_overlap,
+                    )
+                    task_manager.update_task(
+                        task_id,
+                        message=(
+                            f"文本块数量过多，已自动调整 chunk_size={adaptive_chunk_size} "
+                            f"（当前 {len(chunks)} 块）"
+                        ),
+                        progress=8,
+                    )
                 total_chunks = len(chunks)
 
                 # 创建图谱
@@ -409,12 +429,52 @@ def build_graph():
                     task_id, message=f"开始添加 {total_chunks} 个文本块...", progress=15
                 )
 
-                episode_uuids = builder.add_text_batches(
-                    graph_id,
-                    chunks,
-                    batch_size=3,
-                    progress_callback=add_progress_callback,
+                result_queue = Queue(maxsize=1)
+                cancel_event = threading.Event()
+
+                def run_add_batches():
+                    try:
+                        uuids = builder.add_text_batches(
+                            graph_id,
+                            chunks,
+                            ontology=None,
+                            batch_size=Config.GRAPHITI_BATCH_SIZE,
+                            progress_callback=add_progress_callback,
+                            cancel_event=cancel_event,
+                        )
+                        result_queue.put(("ok", uuids))
+                    except BaseException as exc:
+                        result_queue.put(("err", exc, traceback.format_exc()))
+
+                add_thread = threading.Thread(target=run_add_batches, daemon=True)
+                add_thread.start()
+                timeout_cap = max(Config.GRAPHITI_BUILD_TIMEOUT_CAP, 60.0)
+                estimated_timeout = max(
+                    Config.GRAPHITI_BUILD_TIMEOUT,
+                    min(
+                        timeout_cap,
+                        30.0 + total_chunks * (Config.GRAPHITI_EPISODE_TIMEOUT + 2.0),
+                    ),
                 )
+                add_thread.join(timeout=estimated_timeout)
+
+                if add_thread.is_alive():
+                    cancel_event.set()
+                    add_thread.join(timeout=2)
+                    raise TimeoutError(
+                        f"add_text_batches exceeded {estimated_timeout:.0f}s"
+                    )
+
+                try:
+                    add_result = result_queue.get_nowait()
+                except Empty as exc:
+                    raise RuntimeError("add_text_batches returned no result") from exc
+
+                if add_result[0] == "err":
+                    _, exc, tb = add_result
+                    raise RuntimeError(f"add_text_batches failed: {exc}\n{tb}") from exc
+
+                episode_uuids = add_result[1]
 
                 # 等待Graphiti处理完成（查询每个episode的processed状态）
                 task_manager.update_task(
@@ -458,7 +518,7 @@ def build_graph():
                     },
                 )
 
-            except Exception as e:
+            except BaseException as e:
                 # 更新项目状态为失败
                 build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
                 build_logger.debug(traceback.format_exc())
@@ -473,6 +533,29 @@ def build_graph():
                     message=f"构建失败: {str(e)}",
                     error=traceback.format_exc(),
                 )
+            finally:
+                final_task = task_manager.get_task(task_id)
+                if final_task and final_task.status in [
+                    TaskStatus.PENDING,
+                    TaskStatus.PROCESSING,
+                ]:
+                    task_manager.fail_task(
+                        task_id,
+                        "构建线程提前退出，任务未进入终态（保护性失败）。",
+                    )
+
+                latest_project = ProjectManager.get_project(project_id)
+                if (
+                    latest_project
+                    and latest_project.graph_build_task_id == task_id
+                    and latest_project.status == ProjectStatus.GRAPH_BUILDING
+                ):
+                    latest_project.status = ProjectStatus.FAILED
+                    if not latest_project.error:
+                        latest_project.error = (
+                            "构建线程提前退出，项目状态已保护性标记为失败。"
+                        )
+                    ProjectManager.save_project(latest_project)
 
         # 启动后台线程
         thread = threading.Thread(target=build_task, daemon=True)

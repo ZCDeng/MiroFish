@@ -42,7 +42,8 @@ def main():
     debug = Config.DEBUG
     
     # 启动服务
-    app.run(host=host, port=port, debug=debug, threaded=True)
+    # use_reloader=False: 禁止 Werkzeug 自动重载，防止重载时 cleanup_handler 杀死运行中的模拟进程
+    app.run(host=host, port=port, debug=debug, threaded=True, use_reloader=False)
 
 
 if __name__ == '__main__':
