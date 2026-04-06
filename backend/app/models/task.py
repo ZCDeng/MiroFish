@@ -12,8 +12,6 @@ from enum import Enum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 
-from ..utils.locale import t
-
 
 class TaskStatus(str, Enum):
     """任务状态枚举"""
@@ -210,7 +208,7 @@ class TaskManager:
             task_id,
             status=TaskStatus.COMPLETED,
             progress=100,
-            message=t('progress.taskComplete'),
+            message="任务完成",
             result=result
         )
     
@@ -219,7 +217,7 @@ class TaskManager:
         self.update_task(
             task_id,
             status=TaskStatus.FAILED,
-            message=t('progress.taskFailed'),
+            message="任务失败",
             error=error
         )
     
