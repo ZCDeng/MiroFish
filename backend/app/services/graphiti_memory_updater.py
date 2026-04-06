@@ -245,12 +245,6 @@ class GraphitiMemoryUpdater:
         if self._running:
             return
 
-<<<<<<< HEAD:backend/app/services/graphiti_memory_updater.py
-=======
-        # Capture locale before spawning background thread
-        current_locale = get_locale()
-
->>>>>>> origin/main:backend/app/services/zep_graph_memory_updater.py
         self._running = True
         # 在 worker 线程内创建并复用 event loop
         self._loop = asyncio.new_event_loop()
@@ -265,7 +259,9 @@ class GraphitiMemoryUpdater:
     
     def stop(self):
         self._running = False
-        self._flush_remaining()
+        # 不 flush 队列：stop 通常在图谱构建前调用以释放 API 配额，
+        # 此时发送残留活动会与构建任务竞争，触发 429。
+        self._activity_queue.queue.clear()
 
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=10)
@@ -306,15 +302,9 @@ class GraphitiMemoryUpdater:
         
         self.add_activity(activity)
     
-<<<<<<< HEAD:backend/app/services/graphiti_memory_updater.py
     def _worker_loop(self):
         # 在当前线程中运行复用的 event loop
         asyncio.set_event_loop(self._loop)
-=======
-    def _worker_loop(self, locale: str = 'zh'):
-        """后台工作循环 - 按平台批量发送活动到Zep"""
-        set_locale(locale)
->>>>>>> origin/main:backend/app/services/zep_graph_memory_updater.py
         while self._running or not self._activity_queue.empty():
             try:
                 try:
