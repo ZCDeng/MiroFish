@@ -92,6 +92,45 @@ class RobustOpenAIGenericClient(OpenAIGenericClient):
         except json.JSONDecodeError:
             return None
 
+    @staticmethod
+    def _schema_to_example(schema_str: str) -> str:
+        """
+        将 JSON Schema 字符串转换为示例格式。
+        GLM 系列模型无法正确理解 {"type":"object","properties":{...}} 格式，
+        会把 schema 结构本身嵌入返回值而非填充数据。
+        转换为示例格式后模型能正确理解并填充真实数据。
+        """
+        try:
+            schema = json.loads(schema_str)
+        except (json.JSONDecodeError, TypeError):
+            return schema_str
+
+        def gen_example(s):
+            if not isinstance(s, dict):
+                return s
+            t = s.get("type")
+            if t == "object":
+                return {k: gen_example(v) for k, v in s.get("properties", {}).items()}
+            elif t == "array":
+                return [gen_example(s.get("items", {}))]
+            elif t == "string":
+                return s.get("description", "value")
+            elif t == "integer":
+                return 0
+            elif t == "number":
+                return 0.0
+            elif t == "boolean":
+                return True
+            elif t == "null":
+                return None
+            return None
+
+        try:
+            example = gen_example(schema)
+            return json.dumps(example, ensure_ascii=False)
+        except Exception:
+            return schema_str
+
     async def _generate_response(
         self,
         messages,
@@ -107,6 +146,23 @@ class RobustOpenAIGenericClient(OpenAIGenericClient):
                 openai_messages.append({"role": "user", "content": m.content})
             elif m.role == "system":
                 openai_messages.append({"role": "system", "content": m.content})
+
+        # GLM 系列模型不能正确理解 JSON Schema 格式，需将最后一条 user message 中的
+        # schema 描述转换为示例格式（仅对非 OpenAI 接口生效）
+        graphiti_base = Config.GRAPHITI_BASE_URL or ""
+        if "bigmodel" in graphiti_base or "zhipu" in graphiti_base or "glm" in model_name.lower():
+            if openai_messages and openai_messages[-1]["role"] == "user":
+                content = openai_messages[-1]["content"]
+                # Graphiti 注入的 schema 标记
+                marker = "Respond with a JSON object in the following format:\n\n"
+                if marker in content:
+                    prefix, schema_part = content.split(marker, 1)
+                    example = self._schema_to_example(schema_part.strip())
+                    openai_messages[-1]["content"] = (
+                        prefix
+                        + "Respond with a JSON object matching this example structure (fill in real data):\n\n"
+                        + example
+                    )
 
         api_params = {
             "model": model_name,
