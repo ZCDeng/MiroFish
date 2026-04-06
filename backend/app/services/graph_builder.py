@@ -519,6 +519,10 @@ class GraphBuilderService:
                             progress,
                         )
 
+                    # 批次间冷却：避免连续触发 GLM 速率限制
+                    if i > 0:
+                        await asyncio.sleep(30.0)
+
                     for j, chunk in enumerate(batch_chunks):
                         if cancel_event is not None and cancel_event.is_set():
                             raise TimeoutError("add_text_batches cancelled")
@@ -596,6 +600,21 @@ class GraphBuilderService:
                                 failed_chunks["count"] += 1
                                 logger.warning(
                                     f"Episode timeout in batch {batch_num}, chunk {j + 1} after {max_attempts} attempts. "
+                                    "Continuing with remaining chunks."
+                                )
+                                break
+                            except openai.RateLimitError as e:
+                                backoff = 60.0
+                                if attempt < max_attempts:
+                                    logger.warning(
+                                        f"Rate limit (429) in batch {batch_num}, chunk {j + 1}, "
+                                        f"attempt {attempt}/{max_attempts}. Waiting {backoff:.0f}s..."
+                                    )
+                                    await asyncio.sleep(backoff)
+                                    continue
+                                failed_chunks["count"] += 1
+                                logger.warning(
+                                    f"Rate limit (429) final in batch {batch_num}, chunk {j + 1}. "
                                     "Continuing with remaining chunks."
                                 )
                                 break

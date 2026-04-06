@@ -461,7 +461,7 @@ def build_graph():
                     Config.GRAPHITI_BUILD_TIMEOUT,
                     min(
                         timeout_cap,
-                        30.0 + total_chunks * (Config.GRAPHITI_EPISODE_TIMEOUT + 2.0),
+                        30.0 + total_chunks * (Config.GRAPHITI_EPISODE_TIMEOUT + 32.0),
                     ),
                 )
                 add_thread.join(timeout=estimated_timeout)
