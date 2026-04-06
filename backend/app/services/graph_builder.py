@@ -105,16 +105,30 @@ class RobustOpenAIGenericClient(OpenAIGenericClient):
         except (json.JSONDecodeError, TypeError):
             return schema_str
 
+        defs = schema.get("$defs", {})
+
+        def resolve_ref(ref: str) -> dict:
+            # ref is like "#/$defs/SomeName"
+            parts = ref.lstrip("#/").split("/")
+            node = schema
+            for p in parts:
+                node = node.get(p, {})
+            return node if isinstance(node, dict) else {}
+
         def gen_example(s):
             if not isinstance(s, dict):
                 return s
+            # Resolve $ref first
+            if "$ref" in s:
+                s = resolve_ref(s["$ref"])
             t = s.get("type")
             if t == "object":
                 return {k: gen_example(v) for k, v in s.get("properties", {}).items()}
             elif t == "array":
                 return [gen_example(s.get("items", {}))]
             elif t == "string":
-                return s.get("description", "value")
+                desc = s.get("description") or s.get("title", "")
+                return f"<{desc}>" if desc else "value"
             elif t == "integer":
                 return 0
             elif t == "number":
