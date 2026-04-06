@@ -72,3 +72,6 @@ docs/
 backend/patched_*.py
 smoke_doc.txt
 tiny_doc.txt
+
+# CI workflow (需要 PAT workflow scope 才能推送)
+.github/
