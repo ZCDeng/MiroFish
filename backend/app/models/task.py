@@ -153,6 +153,7 @@ class TaskManager:
         with self._task_lock:
             self._tasks[task_id] = task
             self._save_task_to_disk(task)
+            self._auto_cleanup(keep=10)
 
         return task_id
     
@@ -228,6 +229,17 @@ class TaskManager:
                 tasks = [t for t in tasks if t.task_type == task_type]
             return [t.to_dict() for t in sorted(tasks, key=lambda x: x.created_at, reverse=True)]
     
+    def _auto_cleanup(self, keep: int = 10):
+        """保留最新 keep 条已结束任务，其余删除（在持有锁时调用）"""
+        done = [
+            t for t in self._tasks.values()
+            if t.status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+        ]
+        done.sort(key=lambda x: x.created_at, reverse=True)
+        for old in done[keep:]:
+            del self._tasks[old.task_id]
+            self._delete_task_from_disk(old.task_id)
+
     def cleanup_old_tasks(self, max_age_hours: int = 24):
         """清理旧任务"""
         from datetime import timedelta
