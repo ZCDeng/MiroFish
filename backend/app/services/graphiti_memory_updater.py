@@ -18,7 +18,6 @@ from graphiti_core.nodes import EpisodeType
 
 from ..config import Config
 from ..utils.logger import get_logger
-from ..utils.locale import get_locale, set_locale
 
 logger = get_logger('mirofish.graphiti_memory_updater')
 
@@ -250,7 +249,6 @@ class GraphitiMemoryUpdater:
         self._loop = asyncio.new_event_loop()
         self._worker_thread = threading.Thread(
             target=self._worker_loop,
-            args=(current_locale,),
             daemon=True,
             name=f"GraphitiMemoryUpdater-{self.graph_id[:8]}"
         )
