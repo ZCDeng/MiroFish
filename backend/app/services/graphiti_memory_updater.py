@@ -18,6 +18,7 @@ from graphiti_core.nodes import EpisodeType
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.locale import get_locale, set_locale
 
 logger = get_logger('mirofish.graphiti_memory_updater')
 
@@ -244,11 +245,18 @@ class GraphitiMemoryUpdater:
         if self._running:
             return
 
+<<<<<<< HEAD:backend/app/services/graphiti_memory_updater.py
+=======
+        # Capture locale before spawning background thread
+        current_locale = get_locale()
+
+>>>>>>> origin/main:backend/app/services/zep_graph_memory_updater.py
         self._running = True
         # 在 worker 线程内创建并复用 event loop
         self._loop = asyncio.new_event_loop()
         self._worker_thread = threading.Thread(
             target=self._worker_loop,
+            args=(current_locale,),
             daemon=True,
             name=f"GraphitiMemoryUpdater-{self.graph_id[:8]}"
         )
@@ -298,9 +306,15 @@ class GraphitiMemoryUpdater:
         
         self.add_activity(activity)
     
+<<<<<<< HEAD:backend/app/services/graphiti_memory_updater.py
     def _worker_loop(self):
         # 在当前线程中运行复用的 event loop
         asyncio.set_event_loop(self._loop)
+=======
+    def _worker_loop(self, locale: str = 'zh'):
+        """后台工作循环 - 按平台批量发送活动到Zep"""
+        set_locale(locale)
+>>>>>>> origin/main:backend/app/services/zep_graph_memory_updater.py
         while self._running or not self._activity_queue.empty():
             try:
                 try:

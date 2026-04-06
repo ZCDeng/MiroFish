@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from ..models.task import TaskManager, TaskStatus
 from ..utils.logger import get_logger
 from .text_processor import TextProcessor
+from ..utils.locale import t, get_locale, set_locale
 
 
 logger = get_logger("mirofish.graph")
@@ -323,10 +324,17 @@ class GraphBuilderService:
                 "text_length": len(text),
             },
         )
+<<<<<<< HEAD
+=======
+        
+        # Capture locale before spawning background thread
+        current_locale = get_locale()
+>>>>>>> origin/main
 
         # 在后台线程中执行构建
         thread = threading.Thread(
             target=self._build_graph_worker,
+<<<<<<< HEAD
             args=(
                 task_id,
                 text,
@@ -336,6 +344,9 @@ class GraphBuilderService:
                 chunk_overlap,
                 batch_size,
             ),
+=======
+            args=(task_id, text, ontology, graph_name, chunk_size, chunk_overlap, batch_size, current_locale)
+>>>>>>> origin/main
         )
         thread.daemon = True
         thread.start()
@@ -351,30 +362,61 @@ class GraphBuilderService:
         chunk_size: int,
         chunk_overlap: int,
         batch_size: int,
+<<<<<<< HEAD
+=======
+        locale: str = 'zh'
+>>>>>>> origin/main
     ):
         """图谱构建工作线程"""
+        set_locale(locale)
         try:
             self.task_manager.update_task(
                 task_id,
                 status=TaskStatus.PROCESSING,
                 progress=5,
+<<<<<<< HEAD
                 message="开始构建图谱...",
+=======
+                message=t('progress.startBuildingGraph')
+>>>>>>> origin/main
             )
 
             # 1. 创建图谱
             graph_id = self.create_graph(graph_name)
             self.task_manager.update_task(
+<<<<<<< HEAD
                 task_id, progress=10, message=f"图谱已创建: {graph_id}"
             )
 
             # 2. 设置本体 (Graphiti不需要显式设置本体，我们在添加episode时传入)
             self.task_manager.update_task(task_id, progress=15, message="本体已准备")
 
+=======
+                task_id,
+                progress=10,
+                message=t('progress.graphCreated', graphId=graph_id)
+            )
+            
+            # 2. 设置本体
+            self.set_ontology(graph_id, ontology)
+            self.task_manager.update_task(
+                task_id,
+                progress=15,
+                message=t('progress.ontologySet')
+            )
+            
+>>>>>>> origin/main
             # 3. 文本分块
             chunks = TextProcessor.split_text(text, chunk_size, chunk_overlap)
             total_chunks = len(chunks)
             self.task_manager.update_task(
+<<<<<<< HEAD
                 task_id, progress=20, message=f"文本已分割为 {total_chunks} 个块"
+=======
+                task_id,
+                progress=20,
+                message=t('progress.textSplit', count=total_chunks)
+>>>>>>> origin/main
             )
 
             # 4. 分批发送数据
@@ -392,7 +434,13 @@ class GraphBuilderService:
 
             # 5. 等待处理完成 (Graphiti add_episode_bulk 是同步等待的，所以这里不需要额外等待)
             self.task_manager.update_task(
+<<<<<<< HEAD
                 task_id, progress=60, message="处理数据完成..."
+=======
+                task_id,
+                progress=60,
+                message=t('progress.waitingZepProcess')
+>>>>>>> origin/main
             )
 
             self._wait_for_episodes(
@@ -406,7 +454,13 @@ class GraphBuilderService:
 
             # 6. 获取图谱信息
             self.task_manager.update_task(
+<<<<<<< HEAD
                 task_id, progress=90, message="获取图谱信息..."
+=======
+                task_id,
+                progress=90,
+                message=t('progress.fetchingGraphInfo')
+>>>>>>> origin/main
             )
 
             graph_info = self._get_graph_info(graph_id)
@@ -492,6 +546,7 @@ class GraphBuilderService:
         episode_uuids = []
         failed_chunks = {"count": 0}
         total_chunks = len(chunks)
+<<<<<<< HEAD
 
         entity_types = None
         if ontology:
@@ -672,6 +727,49 @@ class GraphBuilderService:
                 "All chunks failed to be added to graph. "
                 "Check Graphiti/Neo4j state and ontology compatibility."
             )
+=======
+        
+        for i in range(0, total_chunks, batch_size):
+            batch_chunks = chunks[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (total_chunks + batch_size - 1) // batch_size
+            
+            if progress_callback:
+                progress = (i + len(batch_chunks)) / total_chunks
+                progress_callback(
+                    t('progress.sendingBatch', current=batch_num, total=total_batches, chunks=len(batch_chunks)),
+                    progress
+                )
+            
+            # 构建episode数据
+            episodes = [
+                EpisodeData(data=chunk, type="text")
+                for chunk in batch_chunks
+            ]
+            
+            # 发送到Zep
+            try:
+                batch_result = self.client.graph.add_batch(
+                    graph_id=graph_id,
+                    episodes=episodes
+                )
+                
+                # 收集返回的 episode uuid
+                if batch_result and isinstance(batch_result, list):
+                    for ep in batch_result:
+                        ep_uuid = getattr(ep, 'uuid_', None) or getattr(ep, 'uuid', None)
+                        if ep_uuid:
+                            episode_uuids.append(ep_uuid)
+                
+                # 避免请求过快
+                time.sleep(1)
+                
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(t('progress.batchFailed', batch=batch_num, error=str(e)), 0)
+                raise
+        
+>>>>>>> origin/main
         return episode_uuids
 
     def _wait_for_episodes(
@@ -680,10 +778,63 @@ class GraphBuilderService:
         progress_callback: Optional[Callable[[str, float], None]] = None,
         timeout: int = 600,
     ):
+<<<<<<< HEAD
         """Graphiti add_episode is awaited, so no need to wait here"""
         if progress_callback:
             progress_callback("处理完成", 1.0)
 
+=======
+        """等待所有 episode 处理完成（通过查询每个 episode 的 processed 状态）"""
+        if not episode_uuids:
+            if progress_callback:
+                progress_callback(t('progress.noEpisodesWait'), 1.0)
+            return
+        
+        start_time = time.time()
+        pending_episodes = set(episode_uuids)
+        completed_count = 0
+        total_episodes = len(episode_uuids)
+        
+        if progress_callback:
+            progress_callback(t('progress.waitingEpisodes', count=total_episodes), 0)
+        
+        while pending_episodes:
+            if time.time() - start_time > timeout:
+                if progress_callback:
+                    progress_callback(
+                        t('progress.episodesTimeout', completed=completed_count, total=total_episodes),
+                        completed_count / total_episodes
+                    )
+                break
+            
+            # 检查每个 episode 的处理状态
+            for ep_uuid in list(pending_episodes):
+                try:
+                    episode = self.client.graph.episode.get(uuid_=ep_uuid)
+                    is_processed = getattr(episode, 'processed', False)
+                    
+                    if is_processed:
+                        pending_episodes.remove(ep_uuid)
+                        completed_count += 1
+                        
+                except Exception as e:
+                    # 忽略单个查询错误，继续
+                    pass
+            
+            elapsed = int(time.time() - start_time)
+            if progress_callback:
+                progress_callback(
+                    t('progress.zepProcessing', completed=completed_count, total=total_episodes, pending=len(pending_episodes), elapsed=elapsed),
+                    completed_count / total_episodes if total_episodes > 0 else 0
+                )
+            
+            if pending_episodes:
+                time.sleep(3)  # 每3秒检查一次
+        
+        if progress_callback:
+            progress_callback(t('progress.processingComplete', completed=completed_count, total=total_episodes), 1.0)
+    
+>>>>>>> origin/main
     def _get_graph_info(self, graph_id: str) -> GraphInfo:
         """获取图谱信息"""
 
