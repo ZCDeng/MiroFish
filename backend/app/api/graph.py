@@ -18,6 +18,7 @@ from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
 from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
+from ..services.graphiti_memory_updater import GraphitiMemoryManager
 
 # 获取日志器
 logger = get_logger("mirofish.api")
@@ -369,6 +370,13 @@ def build_graph():
             build_logger = get_logger("mirofish.build")
             try:
                 build_logger.info(f"[{task_id}] 开始构建图谱...")
+
+                # 停止所有活跃的 GraphitiMemoryUpdater，避免与图谱构建争抢 OpenAI 配额
+                active = list(GraphitiMemoryManager._updaters.keys())
+                if active:
+                    build_logger.info(f"[{task_id}] 停止 {len(active)} 个活跃的图谱记忆更新器以释放 API 配额")
+                    GraphitiMemoryManager.stop_all()
+
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.PROCESSING,
