@@ -78,7 +78,9 @@ class RobustOpenAIGenericClient(OpenAIGenericClient):
 
         try:
             parsed = json.loads(text)
-            return parsed if isinstance(parsed, dict) else None
+            if isinstance(parsed, dict):
+                return RobustOpenAIGenericClient._normalize_glm_response(parsed)
+            return None
         except json.JSONDecodeError:
             pass
 
@@ -88,9 +90,36 @@ class RobustOpenAIGenericClient(OpenAIGenericClient):
 
         try:
             parsed = json.loads(match.group(0))
-            return parsed if isinstance(parsed, dict) else None
+            if isinstance(parsed, dict):
+                return RobustOpenAIGenericClient._normalize_glm_response(parsed)
+            return None
         except json.JSONDecodeError:
             return None
+
+    @staticmethod
+    def _normalize_glm_response(parsed: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        GLM 系列模型有时将 'name' 字段返回为 'entity_name' 或其他变体。
+        此方法对 Graphiti 已知的响应结构进行字段名正规化，确保后续 Pydantic 验证通过。
+        """
+        # Fix extracted_entities: entity_name → name
+        if "extracted_entities" in parsed and isinstance(parsed["extracted_entities"], list):
+            for entity in parsed["extracted_entities"]:
+                if isinstance(entity, dict) and "name" not in entity:
+                    for alt in ("entity_name", "entityName", "entity", "label", "node_name"):
+                        if alt in entity:
+                            entity["name"] = entity.pop(alt)
+                            break
+        # Fix missed_entities (reflexion): items should be strings
+        if "missed_entities" in parsed and isinstance(parsed["missed_entities"], list):
+            fixed = []
+            for item in parsed["missed_entities"]:
+                if isinstance(item, dict):
+                    fixed.append(item.get("name") or item.get("entity_name") or str(item))
+                else:
+                    fixed.append(item)
+            parsed["missed_entities"] = fixed
+        return parsed
 
     @staticmethod
     def _schema_to_example(schema_str: str) -> str:
