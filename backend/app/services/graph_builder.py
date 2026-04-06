@@ -190,10 +190,17 @@ class RobustOpenAIGenericClient(OpenAIGenericClient):
             elif m.role == "system":
                 openai_messages.append({"role": "system", "content": m.content})
 
-        # GLM 系列模型不能正确理解 JSON Schema 格式，需将最后一条 user message 中的
-        # schema 描述转换为示例格式（仅对非 OpenAI 接口生效）
+        # 非 OpenAI 模型（GLM / Qwen 等）不能正确理解 JSON Schema 格式，
+        # 需将最后一条 user message 中的 schema 描述转换为示例格式
         graphiti_base = Config.GRAPHITI_BASE_URL or ""
-        if "bigmodel" in graphiti_base or "zhipu" in graphiti_base or "glm" in model_name.lower():
+        _non_openai = (
+            "bigmodel" in graphiti_base
+            or "zhipu" in graphiti_base
+            or "dashscope" in graphiti_base
+            or "glm" in model_name.lower()
+            or "qwen" in model_name.lower()
+        )
+        if _non_openai:
             if openai_messages and openai_messages[-1]["role"] == "user":
                 content = openai_messages[-1]["content"]
                 # Graphiti 注入的 schema 标记
