@@ -52,7 +52,7 @@ class Config:
     )
     GRAPHITI_BATCH_SIZE = int(os.environ.get("GRAPHITI_BATCH_SIZE", "1"))
     GRAPHITI_CHUNK_MAX_CHARS = int(os.environ.get("GRAPHITI_CHUNK_MAX_CHARS", "1200"))
-    GRAPHITI_MAX_CHUNKS = int(os.environ.get("GRAPHITI_MAX_CHUNKS", "10"))
+    GRAPHITI_MAX_CHUNKS = int(os.environ.get("GRAPHITI_MAX_CHUNKS", "5"))
     GRAPHITI_ONTOLOGY_CHUNK_THRESHOLD = int(
         os.environ.get("GRAPHITI_ONTOLOGY_CHUNK_THRESHOLD", "40")
     )

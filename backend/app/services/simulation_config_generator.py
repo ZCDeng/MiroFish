@@ -20,12 +20,8 @@ from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
-<<<<<<< HEAD
-from .graphiti_entity_reader import EntityNode, GraphitiEntityReader
-=======
 from ..utils.locale import get_language_instruction, t
-from .zep_entity_reader import EntityNode, ZepEntityReader
->>>>>>> origin/main
+from .graphiti_entity_reader import EntityNode, GraphitiEntityReader
 
 logger = get_logger('mirofish.simulation_config')
 
@@ -873,20 +869,17 @@ class SimulationConfigGenerator:
         system_prompt = "你是社交媒体行为分析专家。返回纯JSON，配置需符合模拟场景中目标用户群体的作息习惯。"
         system_prompt = f"{system_prompt}\n\n{get_language_instruction()}\nIMPORTANT: The 'stance' field value MUST be one of the English strings: 'supportive', 'opposing', 'neutral', 'observer'. All JSON field names and numeric values must remain unchanged. Only natural language text fields should use the specified language."
 
-        try:
-            result = self._call_llm_with_retry(prompt, system_prompt)
-            llm_configs = {cfg["agent_id"]: cfg for cfg in result.get("agent_configs", [])}
-        except Exception as e:
-            logger.warning(f"Agent配置批次LLM生成失败: {e}, 使用规则生成")
-            llm_configs = {}
-        
+        # entity_type 在图谱中全为通用 Entity，LLM 输出与规则 else 分支等价
+        # 跳过 LLM 批次调用，直接规则生成，节省约 12 次 LLM 调用/次 prepare
+        llm_configs = {}
+
         # 构建AgentActivityConfig对象
         configs = []
         for i, entity in enumerate(entities):
             agent_id = start_idx + i
             cfg = llm_configs.get(agent_id, {})
-            
-            # 如果LLM没有生成，使用规则生成
+
+            # 使用规则生成
             if not cfg:
                 cfg = self._generate_agent_config_by_rule(entity)
             
