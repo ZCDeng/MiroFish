@@ -271,11 +271,7 @@ class SimulationManager:
             
             # ========== 阶段1: 读取并过滤实体 ==========
             if progress_callback:
-<<<<<<< HEAD
                 progress_callback("reading", 0, "正在连接Graphiti图谱...")
-=======
-                progress_callback("reading", 0, t('progress.connectingZepGraph'))
->>>>>>> origin/main
             
             reader = GraphitiEntityReader()
             

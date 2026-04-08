@@ -10,17 +10,35 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
+
+def _sanitize_for_json(obj):
+    """将无法直接 JSON 序列化的对象转换为字符串（如 Neo4j DateTime）"""
+    if hasattr(obj, 'isoformat'):
+        return obj.isoformat()
+    if hasattr(obj, '__str__') and not isinstance(obj, (str, int, float, bool, type(None))):
+        return str(obj)
+    return obj
+
+
+def _sanitize_dict(d: Dict[str, Any]) -> Dict[str, Any]:
+    """递归清洗字典中的不可序列化值"""
+    result = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            result[k] = _sanitize_dict(v)
+        elif isinstance(v, list):
+            result[k] = [_sanitize_for_json(i) if not isinstance(i, dict) else _sanitize_dict(i) for i in v]
+        else:
+            result[k] = _sanitize_for_json(v)
+    return result
+
 from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
-<<<<<<< HEAD
+from ..utils.locale import get_language_instruction, get_locale, set_locale, t
 from .graphiti_entity_reader import EntityNode, GraphitiEntityReader
 from .graphiti_tools import GraphitiToolsService
-=======
-from ..utils.locale import get_language_instruction, get_locale, set_locale, t
-from .zep_entity_reader import EntityNode, ZepEntityReader
->>>>>>> origin/main
 
 logger = get_logger('mirofish.oasis_profile')
 
@@ -245,66 +263,6 @@ class OasisProfileGenerator:
             "context": ""
         }
         
-<<<<<<< HEAD
-=======
-        # 必须有graph_id才能进行搜索
-        if not self.graph_id:
-            logger.debug(f"跳过Zep检索：未设置graph_id")
-            return results
-        
-        comprehensive_query = t('progress.zepSearchQuery', name=entity_name)
-        
-        def search_edges():
-            """搜索边（事实/关系）- 带重试机制"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=30,
-                        scope="edges",
-                        reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep边搜索第 {attempt + 1} 次失败: {str(e)[:80]}, 重试中...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep边搜索在 {max_retries} 次尝试后仍失败: {e}")
-            return None
-        
-        def search_nodes():
-            """搜索节点（实体摘要）- 带重试机制"""
-            max_retries = 3
-            last_exception = None
-            delay = 2.0
-            
-            for attempt in range(max_retries):
-                try:
-                    return self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=20,
-                        scope="nodes",
-                        reranker="rrf"
-                    )
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        logger.debug(f"Zep节点搜索第 {attempt + 1} 次失败: {str(e)[:80]}, 重试中...")
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        logger.debug(f"Zep节点搜索在 {max_retries} 次尝试后仍失败: {e}")
-            return None
-        
->>>>>>> origin/main
         try:
             search_result = self.graphiti_tools.search_graph(
                 graph_id=self.graph_id,
@@ -531,13 +489,9 @@ class OasisProfileGenerator:
         }
     
     def _get_system_prompt(self, is_individual: bool) -> str:
-<<<<<<< HEAD
-        return "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。使用中文。"
-=======
         """获取系统提示词"""
         base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。"
         return f"{base_prompt}\n\n{get_language_instruction()}"
->>>>>>> origin/main
     
     def _build_individual_persona_prompt(
         self,
@@ -547,7 +501,7 @@ class OasisProfileGenerator:
         entity_attributes: Dict[str, Any],
         context: str
     ) -> str:
-        attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
+        attrs_str = json.dumps(_sanitize_dict(entity_attributes), ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
         
         return f"""为实体生成详细的社交媒体用户人设,最大程度还原已有现实情况。
@@ -594,7 +548,7 @@ class OasisProfileGenerator:
         entity_attributes: Dict[str, Any],
         context: str
     ) -> str:
-        attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
+        attrs_str = json.dumps(_sanitize_dict(entity_attributes), ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
         
         return f"""为机构/群体实体生成详细的社交媒体账号设定,最大程度还原已有现实情况。
@@ -755,11 +709,8 @@ class OasisProfileGenerator:
         current_locale = get_locale()
 
         def generate_single_profile(idx: int, entity: EntityNode) -> tuple:
-<<<<<<< HEAD
-=======
             """生成单个profile的工作函数"""
             set_locale(current_locale)
->>>>>>> origin/main
             entity_type = entity.get_entity_type() or "Entity"
             
             try:

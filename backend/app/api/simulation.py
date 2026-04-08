@@ -60,11 +60,7 @@ def get_graph_entities(graph_id: str):
         if not Config.NEO4J_URI:
             return jsonify({
                 "success": False,
-<<<<<<< HEAD
                 "error": "NEO4J_URI未配置"
-=======
-                "error": t('api.zepApiKeyMissing')
->>>>>>> origin/main
             }), 500
         
         entity_types_str = request.args.get('entity_types', '')
@@ -101,11 +97,7 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
         if not Config.NEO4J_URI:
             return jsonify({
                 "success": False,
-<<<<<<< HEAD
                 "error": "NEO4J_URI未配置"
-=======
-                "error": t('api.zepApiKeyMissing')
->>>>>>> origin/main
             }), 500
         
         reader = GraphitiEntityReader()
@@ -138,11 +130,7 @@ def get_entities_by_type(graph_id: str, entity_type: str):
         if not Config.NEO4J_URI:
             return jsonify({
                 "success": False,
-<<<<<<< HEAD
                 "error": "NEO4J_URI未配置"
-=======
-                "error": t('api.zepApiKeyMissing')
->>>>>>> origin/main
             }), 500
         
         enrich = request.args.get('enrich', 'true').lower() == 'true'

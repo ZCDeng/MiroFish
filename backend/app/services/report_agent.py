@@ -21,14 +21,9 @@ from enum import Enum
 from ..config import Config
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
-<<<<<<< HEAD
-from .graphiti_tools import (
-    GraphitiToolsService, 
-=======
 from ..utils.locale import get_language_instruction, t
-from .zep_tools import (
-    ZepToolsService, 
->>>>>>> origin/main
+from .graphiti_tools import (
+    GraphitiToolsService,
     SearchResult, 
     InsightForgeResult, 
     PanoramaResult,

@@ -203,19 +203,12 @@ class OntologyGenerator:
         user_message = self._build_user_message(
             document_texts, simulation_requirement, additional_context
         )
-<<<<<<< HEAD
 
-        messages = [
-            {"role": "system", "content": ONTOLOGY_SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-=======
-        
         lang_instruction = get_language_instruction()
         system_prompt = f"{ONTOLOGY_SYSTEM_PROMPT}\n\n{lang_instruction}\nIMPORTANT: Entity type names MUST be in English PascalCase (e.g., 'PersonEntity', 'MediaOrganization'). Relationship type names MUST be in English UPPER_SNAKE_CASE (e.g., 'WORKS_FOR'). Attribute names MUST be in English snake_case. Only description fields and analysis_summary should use the specified language above."
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
->>>>>>> origin/main
         ]
 
         # 调用LLM
@@ -331,8 +324,6 @@ class OntologyGenerator:
         MAX_ENTITY_TYPES = 10
         MAX_EDGE_TYPES = 10
 
-<<<<<<< HEAD
-=======
         # 去重：按 name 去重，保留首次出现的
         seen_names = set()
         deduped = []
@@ -345,7 +336,7 @@ class OntologyGenerator:
                 logger.warning(f"Duplicate entity type '{name}' removed during validation")
         result["entity_types"] = deduped
 
->>>>>>> origin/main
+
         # 兜底类型定义
         person_fallback = {
             "name": "Person",

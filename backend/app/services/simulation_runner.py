@@ -20,12 +20,8 @@ from queue import Queue
 
 from ..config import Config
 from ..utils.logger import get_logger
-<<<<<<< HEAD
-from .graphiti_memory_updater import GraphitiMemoryManager
-=======
 from ..utils.locale import get_locale, set_locale
-from .zep_graph_memory_updater import ZepGraphMemoryManager
->>>>>>> origin/main
+from .graphiti_memory_updater import GraphitiMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
 logger = get_logger('mirofish.simulation_runner')
