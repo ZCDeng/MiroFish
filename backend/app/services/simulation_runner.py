@@ -12,6 +12,11 @@ import threading
 import subprocess
 import signal
 import atexit
+try:
+    import psutil
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    _PSUTIL_AVAILABLE = False
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -643,7 +648,7 @@ class SimulationRunner:
                                 elif event_type == "round_end":
                                     round_num = action_data.get("round", 0)
                                     simulated_hours = action_data.get("simulated_hours", 0)
-                                    
+
                                     # 更新各平台独立的轮次和时间
                                     if platform == "twitter":
                                         if round_num > state.twitter_current_round:
@@ -653,12 +658,26 @@ class SimulationRunner:
                                         if round_num > state.reddit_current_round:
                                             state.reddit_current_round = round_num
                                         state.reddit_simulated_hours = simulated_hours
-                                    
+
                                     # 总体轮次取两个平台的最大值
                                     if round_num > state.current_round:
                                         state.current_round = round_num
                                     # 总体时间取两个平台的最大值
                                     state.simulated_hours = max(state.twitter_simulated_hours, state.reddit_simulated_hours)
+
+                                    # 每 10 轮采样一次子进程 RSS，超过 12GB 发出预警
+                                    _MEMORY_SAMPLE_INTERVAL = 10
+                                    _MEMORY_WARNING_GB = 12
+                                    if _PSUTIL_AVAILABLE and state.process_pid and round_num % _MEMORY_SAMPLE_INTERVAL == 0:
+                                        try:
+                                            proc = psutil.Process(state.process_pid)
+                                            rss_bytes = proc.memory_info().rss
+                                            rss_gb = rss_bytes / (1024 ** 3)
+                                            logger.info(f"[内存] 轮次 {round_num}: 子进程 RSS = {rss_gb:.2f} GB (pid={state.process_pid})")
+                                            if rss_gb >= _MEMORY_WARNING_GB:
+                                                logger.warning(f"[内存警告] 轮次 {round_num}: 子进程 RSS {rss_gb:.2f} GB 超过阈值 {_MEMORY_WARNING_GB} GB，可能触发 OOM")
+                                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                            pass
                                 
                                 continue
                             

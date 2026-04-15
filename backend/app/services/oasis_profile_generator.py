@@ -170,8 +170,9 @@ class OasisProfileGenerator:
     ]
     
     GROUP_ENTITY_TYPES = [
-        "university", "governmentagency", "organization", "ngo", 
-        "mediaoutlet", "company", "institution", "group", "community"
+        "university", "governmentagency", "organization", "ngo",
+        "mediaoutlet", "company", "institution", "group", "community",
+        "event"
     ]
     
     def __init__(
@@ -197,18 +198,22 @@ class OasisProfileGenerator:
         self.graphiti_tools = GraphitiToolsService()
     
     def generate_profile_from_entity(
-        self, 
-        entity: EntityNode, 
+        self,
+        entity: EntityNode,
         user_id: int,
         use_llm: bool = True
     ) -> OasisAgentProfile:
         entity_type = entity.get_entity_type() or "Entity"
-        
+
+        # Group/Event 实体直接走 rule-based，跳过 Graphiti search 和 LLM 调用
+        if use_llm and self._is_group_entity(entity_type):
+            use_llm = False
+
         name = entity.name
         user_name = self._generate_username(name)
-        
+
         context = self._build_entity_context(entity)
-        
+
         if use_llm:
             profile_data = self._generate_profile_with_llm(
                 entity_name=name,
@@ -384,6 +389,11 @@ class OasisProfileGenerator:
         
         for attempt in range(max_attempts):
             try:
+                # 禁用 Qwen3 CoT 推理链，减少 2-5s 延迟和 200-500 token 消耗
+                extra_kwargs = {}
+                if "qwen3" in self.model_name.lower():
+                    extra_kwargs["extra_body"] = {"enable_thinking": False}
+
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=[
@@ -391,7 +401,8 @@ class OasisProfileGenerator:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)
+                    temperature=0.7 - (attempt * 0.1),
+                    **extra_kwargs
                 )
                 
                 content = response.choices[0].message.content
@@ -631,10 +642,17 @@ class OasisProfileGenerator:
                 "interested_topics": ["General News", "Current Events", "Public Affairs"],
             }
         
-        elif entity_type_lower in ["university", "governmentagency", "ngo", "organization"]:
+        elif entity_type_lower in ["university", "governmentagency", "ngo", "organization", "company", "institution", "group", "community", "event"]:
+            summary_snippet = (entity_summary[:120] + "…") if entity_summary and len(entity_summary) > 120 else entity_summary
+            bio = summary_snippet or f"Official account of {entity_name}."
+            persona = (
+                f"{entity_name} — {entity_summary}"
+                if entity_summary
+                else f"{entity_name} is an institutional entity that communicates official positions, announcements, and engages with stakeholders on relevant matters."
+            )
             return {
-                "bio": f"Official account of {entity_name}.",
-                "persona": f"{entity_name} is an institutional entity that communicates official positions, announcements, and engages with stakeholders on relevant matters.",
+                "bio": bio,
+                "persona": persona,
                 "age": 30,
                 "gender": "other",
                 "mbti": "ISTJ",
@@ -679,29 +697,27 @@ class OasisProfileGenerator:
         completed_count = [0]
         lock = Lock()
         
-        def save_profiles_realtime():
+        def save_profiles_realtime(new_profile: "OasisAgentProfile"):
+            """O(1) append-only realtime save — 每个 profile 追加一行，不重写整个文件"""
             if not realtime_output_path:
                 return
-            
+
             with lock:
-                existing_profiles = [p for p in profiles if p is not None]
-                if not existing_profiles:
-                    return
-                
                 try:
                     if output_platform == "reddit":
-                        profiles_data = [p.to_reddit_format() for p in existing_profiles]
-                        with open(realtime_output_path, 'w', encoding='utf-8') as f:
-                            json.dump(profiles_data, f, ensure_ascii=False, indent=2)
+                        # JSONL：每行一个 JSON 对象
+                        row = new_profile.to_reddit_format()
+                        with open(realtime_output_path, 'a', encoding='utf-8') as f:
+                            f.write(json.dumps(row, ensure_ascii=False) + "\n")
                     else:
                         import csv
-                        profiles_data = [p.to_twitter_format() for p in existing_profiles]
-                        if profiles_data:
-                            fieldnames = list(profiles_data[0].keys())
-                            with open(realtime_output_path, 'w', encoding='utf-8', newline='') as f:
-                                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        row = new_profile.to_twitter_format()
+                        write_header = not os.path.exists(realtime_output_path) or os.path.getsize(realtime_output_path) == 0
+                        with open(realtime_output_path, 'a', encoding='utf-8', newline='') as f:
+                            writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+                            if write_header:
                                 writer.writeheader()
-                                writer.writerows(profiles_data)
+                            writer.writerow(row)
                 except Exception as e:
                     logger.warning(f"实时保存 profiles 失败: {e}")
         
@@ -755,12 +771,12 @@ class OasisProfileGenerator:
                 try:
                     result_idx, profile, error = future.result()
                     profiles[result_idx] = profile
-                    
+
                     with lock:
                         completed_count[0] += 1
                         current = completed_count[0]
-                    
-                    save_profiles_realtime()
+
+                    save_profiles_realtime(profile)
                     
                     if progress_callback:
                         progress_callback(

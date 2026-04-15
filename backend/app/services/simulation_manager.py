@@ -326,15 +326,19 @@ class SimulationManager:
                         item_name=msg
                     )
             
-            # 设置实时保存的文件路径（优先使用 Reddit JSON 格式）
+            # 实时保存路径使用独立的 _realtime 文件，不覆盖 OASIS 读取的最终文件
             realtime_output_path = None
             realtime_platform = "reddit"
             if state.enable_reddit:
-                realtime_output_path = os.path.join(sim_dir, "reddit_profiles.json")
+                realtime_output_path = os.path.join(sim_dir, "reddit_profiles_realtime.jsonl")
                 realtime_platform = "reddit"
             elif state.enable_twitter:
-                realtime_output_path = os.path.join(sim_dir, "twitter_profiles.csv")
+                realtime_output_path = os.path.join(sim_dir, "twitter_profiles_realtime.csv")
                 realtime_platform = "twitter"
+
+            # 清理上次残留的实时文件，避免污染进度轮询
+            if realtime_output_path and os.path.exists(realtime_output_path):
+                os.remove(realtime_output_path)
             
             profiles = generator.generate_profiles_from_entities(
                 entities=filtered.entities,

@@ -8,5 +8,7 @@ services:
       - "3000:3000"
       - "5002:5002"
     restart: unless-stopped
+    mem_limit: 16g
+    memswap_limit: 16g
     volumes:
       - ./backend/uploads:/app/backend/uploads

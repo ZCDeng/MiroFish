@@ -1069,24 +1069,33 @@ def get_simulation_profiles_realtime(simulation_id: str):
                 "error": t('api.simulationNotFound', id=simulation_id)
             }), 404
         
-        # 确定文件路径
+        # 确定文件路径：优先读实时追加文件，不存在则回退到最终文件
         if platform == "reddit":
-            profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
+            profiles_file = os.path.join(sim_dir, "reddit_profiles_realtime.jsonl")
+            profiles_file_fallback = os.path.join(sim_dir, "reddit_profiles.json")
         else:
-            profiles_file = os.path.join(sim_dir, "twitter_profiles.csv")
-        
+            profiles_file = os.path.join(sim_dir, "twitter_profiles_realtime.csv")
+            profiles_file_fallback = os.path.join(sim_dir, "twitter_profiles.csv")
+
+        if not os.path.exists(profiles_file) and os.path.exists(profiles_file_fallback):
+            profiles_file = profiles_file_fallback
+
         # 检查文件是否存在
         file_exists = os.path.exists(profiles_file)
         profiles = []
         file_modified_at = None
-        
+
         if file_exists:
             # 获取文件修改时间
             file_stat = os.stat(profiles_file)
             file_modified_at = datetime.fromtimestamp(file_stat.st_mtime).isoformat()
-            
+
             try:
-                if platform == "reddit":
+                if profiles_file.endswith(".jsonl"):
+                    # JSONL：每行一个 JSON 对象
+                    with open(profiles_file, 'r', encoding='utf-8') as f:
+                        profiles = [json.loads(line) for line in f if line.strip()]
+                elif profiles_file.endswith(".json"):
                     with open(profiles_file, 'r', encoding='utf-8') as f:
                         profiles = json.load(f)
                 else:

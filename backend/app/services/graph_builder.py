@@ -529,10 +529,6 @@ class GraphBuilderService:
                             progress,
                         )
 
-                    # 批次间冷却：避免连续触发 GLM 速率限制
-                    if i > 0:
-                        await asyncio.sleep(30.0)
-
                     for j, chunk in enumerate(batch_chunks):
                         if cancel_event is not None and cancel_event.is_set():
                             raise TimeoutError("add_text_batches cancelled")
