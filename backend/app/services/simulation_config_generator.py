@@ -440,6 +440,10 @@ class SimulationConfigGenerator:
         
         for attempt in range(max_attempts):
             try:
+                extra_kwargs = {}
+                if "qwen3" in self.model_name.lower():
+                    extra_kwargs["enable_thinking"] = False
+
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=[
@@ -447,8 +451,9 @@ class SimulationConfigGenerator:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7 - (attempt * 0.1)  # 每次重试降低温度
+                    temperature=0.7 - (attempt * 0.1),  # 每次重试降低温度
                     # 不设置max_tokens，让LLM自由发挥
+                    **extra_kwargs
                 )
                 
                 content = response.choices[0].message.content
