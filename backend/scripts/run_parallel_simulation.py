@@ -1157,6 +1157,7 @@ async def run_twitter_simulation(
         platform=oasis.DefaultPlatformType.TWITTER,
         database_path=db_path,
         semaphore=3,  # GLM 免费额度 RPM 有限，严格限制并发防止 429
+        recsys_type="random",  # 避免加载 twhin-bert 模型导致 OOM（峰值 10-13GB）
     )
     
     await result.env.reset()
@@ -1348,6 +1349,7 @@ async def run_reddit_simulation(
         platform=oasis.DefaultPlatformType.REDDIT,
         database_path=db_path,
         semaphore=3,  # GLM 免费额度 RPM 有限，严格限制并发防止 429
+        recsys_type="random",  # 避免加载 twhin-bert 模型导致 OOM（峰值 10-13GB）
     )
     
     await result.env.reset()
