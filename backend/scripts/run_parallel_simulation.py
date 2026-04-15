@@ -1269,12 +1269,16 @@ async def run_twitter_simulation(
         
         actions = {agent: LLMAction() for _, agent in active_agents}
         await result.env.step(actions)
-        
+
+        # 每轮结束后清理 agent 消息历史，防止跨轮累积导致超出上下文窗口
+        for _, agent in result.env.agent_graph.get_agents():
+            agent.clear_memory()
+
         # 从数据库获取实际执行的动作并记录
         actual_actions, last_rowid = fetch_new_actions_from_db(
             db_path, last_rowid, agent_names
         )
-        
+
         round_action_count = 0
         for action_data in actual_actions:
             if action_logger:
@@ -1287,14 +1291,14 @@ async def run_twitter_simulation(
                 )
                 total_actions += 1
                 round_action_count += 1
-        
+
         if action_logger:
             action_logger.log_round_end(round_num + 1, round_action_count)
-        
+
         if (round_num + 1) % 20 == 0:
             progress = (round_num + 1) / total_rounds * 100
             log_info(f"Day {simulated_day}, {simulated_hour:02d}:00 - Round {round_num + 1}/{total_rounds} ({progress:.1f}%)")
-    
+
     # 注意：不关闭环境，保留给Interview使用
     
     if action_logger:
@@ -1478,12 +1482,16 @@ async def run_reddit_simulation(
         
         actions = {agent: LLMAction() for _, agent in active_agents}
         await result.env.step(actions)
-        
+
+        # 每轮结束后清理 agent 消息历史，防止跨轮累积导致超出上下文窗口
+        for _, agent in result.env.agent_graph.get_agents():
+            agent.clear_memory()
+
         # 从数据库获取实际执行的动作并记录
         actual_actions, last_rowid = fetch_new_actions_from_db(
             db_path, last_rowid, agent_names
         )
-        
+
         round_action_count = 0
         for action_data in actual_actions:
             if action_logger:
@@ -1496,14 +1504,14 @@ async def run_reddit_simulation(
                 )
                 total_actions += 1
                 round_action_count += 1
-        
+
         if action_logger:
             action_logger.log_round_end(round_num + 1, round_action_count)
-        
+
         if (round_num + 1) % 20 == 0:
             progress = (round_num + 1) / total_rounds * 100
             log_info(f"Day {simulated_day}, {simulated_hour:02d}:00 - Round {round_num + 1}/{total_rounds} ({progress:.1f}%)")
-    
+
     # 注意：不关闭环境，保留给Interview使用
     
     if action_logger:
