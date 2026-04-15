@@ -347,15 +347,17 @@ class OasisProfileGenerator:
             if related_info:
                 context_parts.append("### 关联实体信息\n" + "\n".join(related_info))
         
-        graphiti_results = self._search_graphiti_for_entity(entity)
-        
-        if graphiti_results.get("facts"):
-            new_facts = [f for f in graphiti_results["facts"] if f not in existing_facts]
-            if new_facts:
-                context_parts.append("### 检索到的事实信息\n" + "\n".join(f"- {f}" for f in new_facts[:15]))
-        
-        if graphiti_results.get("node_summaries"):
-            context_parts.append("### 检索到的相关节点\n" + "\n".join(f"- {s}" for s in graphiti_results["node_summaries"][:10]))
+        # 若 related_edges 已包含图谱上下文，跳过额外的 Graphiti search（省去 1 次 Neo4j 往返）
+        if not entity.related_edges:
+            graphiti_results = self._search_graphiti_for_entity(entity)
+
+            if graphiti_results.get("facts"):
+                new_facts = [f for f in graphiti_results["facts"] if f not in existing_facts]
+                if new_facts:
+                    context_parts.append("### 检索到的事实信息\n" + "\n".join(f"- {f}" for f in new_facts[:15]))
+
+            if graphiti_results.get("node_summaries"):
+                context_parts.append("### 检索到的相关节点\n" + "\n".join(f"- {s}" for s in graphiti_results["node_summaries"][:10]))
         
         return "\n\n".join(context_parts)
     
@@ -673,6 +675,91 @@ class OasisProfileGenerator:
                 "interested_topics": ["General", "Social Issues"],
             }
     
+    def _build_batch_persona_prompt(self, batch_items: List[Dict[str, Any]]) -> str:
+        """为 N 个 Individual 实体构建批量生成 prompt，返回 JSON 数组"""
+        items_text = []
+        for i, item in enumerate(batch_items, 1):
+            attrs_str = json.dumps(_sanitize_dict(item["attributes"]), ensure_ascii=False) if item["attributes"] else "无"
+            ctx = item["context"][:1500] if item["context"] else "无额外上下文"
+            items_text.append(
+                f"[{i}] 名称: {item['name']}\n"
+                f"    类型: {item['entity_type']}\n"
+                f"    摘要: {item['summary']}\n"
+                f"    属性: {attrs_str}\n"
+                f"    上下文: {ctx}"
+            )
+
+        return f"""为以下 {len(batch_items)} 个实体批量生成社交媒体用户人设。
+
+{chr(10).join(items_text)}
+
+请返回一个 JSON 数组，包含 {len(batch_items)} 个对象，按上述顺序排列。每个对象包含:
+1. bio: 社交媒体简介，200字
+2. persona: 详细人设描述（2000字纯文本，含背景/性格/立场/记忆）
+3. age: 年龄整数
+4. gender: 必须是英文 "male" 或 "female"
+5. mbti: MBTI类型
+6. country: 国家（中文）
+7. profession: 职业
+8. interested_topics: 感兴趣话题数组
+
+重要: 返回格式必须是 JSON 数组 [{{"bio":..., "persona":..., ...}}, ...], 共 {len(batch_items)} 个对象。
+所有字段值为字符串或数字，不要使用换行符。{get_language_instruction()} (gender 必须用英文 male/female)
+"""
+
+    def _generate_profiles_batch_with_llm(
+        self,
+        batch_items: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """单次 LLM 调用生成一批 Individual profile，返回与 batch_items 等长的结果列表"""
+        prompt = self._build_batch_persona_prompt(batch_items)
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
+            try:
+                extra_kwargs = {}
+                if "qwen3" in self.model_name.lower():
+                    extra_kwargs["extra_body"] = {"enable_thinking": False}
+
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[
+                        {"role": "system", "content": self._get_system_prompt(is_individual=True)},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.7 - (attempt * 0.1),
+                    **extra_kwargs
+                )
+
+                content = response.choices[0].message.content
+                parsed = json.loads(content)
+
+                # 模型可能把数组包在顶级 key 里（如 {"profiles": [...]}）
+                if isinstance(parsed, dict):
+                    for v in parsed.values():
+                        if isinstance(v, list):
+                            parsed = v
+                            break
+
+                if isinstance(parsed, list) and len(parsed) == len(batch_items):
+                    return parsed
+
+                # 长度不匹配时仍返回已有部分，缺失的由调用方 fallback
+                if isinstance(parsed, list):
+                    logger.warning(f"批量 LLM 返回 {len(parsed)} 个 profile，预期 {len(batch_items)} 个，将部分回退 rule-based")
+                    result = list(parsed)
+                    while len(result) < len(batch_items):
+                        result.append({})
+                    return result
+
+            except Exception as e:
+                logger.warning(f"批量 LLM 生成失败 (attempt {attempt+1}): {e}")
+                time.sleep(1 * (attempt + 1))
+
+        # 全部失败：返回空 dict 列表，调用方将 fallback 到 rule-based
+        return [{} for _ in batch_items]
+
     def set_graph_id(self, graph_id: str):
         self.graph_id = graph_id
     
@@ -723,87 +810,193 @@ class OasisProfileGenerator:
         
         # Capture locale before spawning thread pool workers
         current_locale = get_locale()
+        _BATCH_SIZE = 5  # Individual 实体每批次调用 LLM 的数量
 
-        def generate_single_profile(idx: int, entity: EntityNode) -> tuple:
-            """生成单个profile的工作函数"""
+        def generate_single_profile(idx: int, entity: EntityNode) -> List[tuple]:
+            """生成单个 profile，返回 [(idx, profile, error)] 列表（与批量接口统一）"""
             set_locale(current_locale)
             entity_type = entity.get_entity_type() or "Entity"
-            
+
             try:
                 profile = self.generate_profile_from_entity(
                     entity=entity,
                     user_id=idx,
                     use_llm=use_llm
                 )
-                
                 self._print_generated_profile(entity.name, entity_type, profile)
-                
-                return idx, profile, None
-                
+                return [(idx, profile, None)]
+
             except Exception as e:
                 logger.error(f"生成实体 {entity.name} 的人设失败: {str(e)}")
-                fallback_profile = OasisAgentProfile(
+                fallback = OasisAgentProfile(
                     user_id=idx,
                     user_name=self._generate_username(entity.name),
                     name=entity.name,
                     bio=f"{entity_type}: {entity.name}",
-                    persona=entity.summary or f"A participant in social discussions.",
+                    persona=entity.summary or "A participant in social discussions.",
                     source_entity_uuid=entity.uuid,
                     source_entity_type=entity_type,
                 )
-                return idx, fallback_profile, str(e)
-        
-        logger.info(f"开始并行生成 {total} 个Agent人设（并行数: {parallel_count}）...")
+                return [(idx, fallback, str(e))]
+
+        def generate_batch_profiles(batch: List[tuple]) -> List[tuple]:
+            """批量生成 Individual profile（单次 LLM 调用），返回 [(idx, profile, error), ...]"""
+            set_locale(current_locale)
+
+            batch_items = []
+            for idx, entity in batch:
+                context = self._build_entity_context(entity)
+                batch_items.append({
+                    "name": entity.name,
+                    "entity_type": entity.get_entity_type() or "Entity",
+                    "summary": entity.summary or "",
+                    "attributes": entity.attributes or {},
+                    "context": context,
+                })
+
+            raw_results = self._generate_profiles_batch_with_llm(batch_items)
+
+            results = []
+            for i, (idx, entity) in enumerate(batch):
+                entity_type = entity.get_entity_type() or "Entity"
+                profile_data = raw_results[i] if i < len(raw_results) else {}
+
+                if profile_data:
+                    try:
+                        profile = OasisAgentProfile(
+                            user_id=idx,
+                            user_name=self._generate_username(entity.name),
+                            name=entity.name,
+                            bio=profile_data.get("bio", f"{entity_type}: {entity.name}"),
+                            persona=profile_data.get("persona", entity.summary or f"A {entity_type} named {entity.name}."),
+                            karma=profile_data.get("karma", random.randint(500, 5000)),
+                            friend_count=profile_data.get("friend_count", random.randint(50, 500)),
+                            follower_count=profile_data.get("follower_count", random.randint(100, 1000)),
+                            statuses_count=profile_data.get("statuses_count", random.randint(100, 2000)),
+                            age=profile_data.get("age"),
+                            gender=profile_data.get("gender"),
+                            mbti=profile_data.get("mbti"),
+                            country=profile_data.get("country"),
+                            profession=profile_data.get("profession"),
+                            interested_topics=profile_data.get("interested_topics", []),
+                            source_entity_uuid=entity.uuid,
+                            source_entity_type=entity_type,
+                        )
+                        self._print_generated_profile(entity.name, entity_type, profile)
+                        results.append((idx, profile, None))
+                        continue
+                    except Exception as e:
+                        logger.warning(f"批量结果解析失败 {entity.name}: {e}，回退 rule-based")
+
+                # fallback to rule-based
+                profile_data = self._generate_profile_rule_based(
+                    entity_name=entity.name,
+                    entity_type=entity_type,
+                    entity_summary=entity.summary or "",
+                    entity_attributes=entity.attributes or {},
+                )
+                profile = OasisAgentProfile(
+                    user_id=idx,
+                    user_name=self._generate_username(entity.name),
+                    name=entity.name,
+                    bio=profile_data.get("bio", f"{entity_type}: {entity.name}"),
+                    persona=profile_data.get("persona", entity.summary or f"A {entity_type} named {entity.name}."),
+                    karma=profile_data.get("karma", random.randint(500, 5000)),
+                    friend_count=profile_data.get("friend_count", random.randint(50, 500)),
+                    follower_count=profile_data.get("follower_count", random.randint(100, 1000)),
+                    statuses_count=profile_data.get("statuses_count", random.randint(100, 2000)),
+                    age=profile_data.get("age"),
+                    gender=profile_data.get("gender"),
+                    mbti=profile_data.get("mbti"),
+                    country=profile_data.get("country"),
+                    profession=profile_data.get("profession"),
+                    interested_topics=profile_data.get("interested_topics", []),
+                    source_entity_uuid=entity.uuid,
+                    source_entity_type=entity_type,
+                )
+                results.append((idx, profile, "batch_fallback"))
+
+            return results
+
+        # 分流：Individual 实体批量提交，其余（Group/unknown）单独提交
+        individual_batch: List[tuple] = []
+        non_individual_jobs: List[tuple] = []
+
+        for idx, entity in enumerate(entities):
+            entity_type = entity.get_entity_type() or "Entity"
+            if use_llm and self._is_individual_entity(entity_type):
+                individual_batch.append((idx, entity))
+            else:
+                non_individual_jobs.append((idx, entity))
+
+        # 将 individual_batch 切成 _BATCH_SIZE 大小的子列表
+        batches = [individual_batch[i:i + _BATCH_SIZE] for i in range(0, len(individual_batch), _BATCH_SIZE)]
+
+        logger.info(
+            f"开始并行生成 {total} 个Agent人设（并行数: {parallel_count}）"
+            f" — {len(individual_batch)} 个 Individual 分 {len(batches)} 批，"
+            f"{len(non_individual_jobs)} 个其他单独生成"
+        )
         print(f"\n{'='*60}")
         print(f"开始生成Agent人设 - 共 {total} 个实体，并行数: {parallel_count}")
         print(f"{'='*60}\n")
-        
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel_count) as executor:
-            future_to_entity = {
-                executor.submit(generate_single_profile, idx, entity): (idx, entity)
-                for idx, entity in enumerate(entities)
-            }
-            
-            for future in concurrent.futures.as_completed(future_to_entity):
-                idx, entity = future_to_entity[future]
-                entity_type = entity.get_entity_type() or "Entity"
-                
+            future_map = {}
+
+            for batch in batches:
+                future_map[executor.submit(generate_batch_profiles, batch)] = batch
+
+            for idx, entity in non_individual_jobs:
+                future_map[executor.submit(generate_single_profile, idx, entity)] = [(idx, entity)]
+
+            for future in concurrent.futures.as_completed(future_map):
+                job_info = future_map[future]
+
                 try:
-                    result_idx, profile, error = future.result()
-                    profiles[result_idx] = profile
+                    result_list = future.result()  # always List[(idx, profile, error)]
 
-                    with lock:
-                        completed_count[0] += 1
-                        current = completed_count[0]
+                    for result_idx, profile, error in result_list:
+                        profiles[result_idx] = profile
+                        entity = entities[result_idx]
+                        entity_type = entity.get_entity_type() or "Entity"
 
-                    save_profiles_realtime(profile)
-                    
-                    if progress_callback:
-                        progress_callback(
-                            current, 
-                            total, 
-                            f"已完成 {current}/{total}: {entity.name}（{entity_type}）"
-                        )
-                    
-                    if error:
-                        logger.warning(f"[{current}/{total}] {entity.name} 使用备用人设: {error}")
-                    else:
-                        logger.info(f"[{current}/{total}] 成功生成人设: {entity.name} ({entity_type})")
-                        
+                        with lock:
+                            completed_count[0] += 1
+                            current = completed_count[0]
+
+                        save_profiles_realtime(profile)
+
+                        if progress_callback:
+                            progress_callback(
+                                current,
+                                total,
+                                f"已完成 {current}/{total}: {entity.name}（{entity_type}）"
+                            )
+
+                        if error:
+                            logger.warning(f"[{current}/{total}] {entity.name} 使用备用人设: {error}")
+                        else:
+                            logger.info(f"[{current}/{total}] 成功生成人设: {entity.name} ({entity_type})")
+
                 except Exception as e:
-                    logger.error(f"处理实体 {entity.name} 时发生异常: {str(e)}")
-                    with lock:
-                        completed_count[0] += 1
-                    profiles[idx] = OasisAgentProfile(
-                        user_id=idx,
-                        user_name=self._generate_username(entity.name),
-                        name=entity.name,
-                        bio=f"{entity_type}: {entity.name}",
-                        persona=entity.summary or "A participant in social discussions.",
-                        source_entity_uuid=entity.uuid,
-                        source_entity_type=entity_type,
-                    )
-                    save_profiles_realtime()
+                    # 整个批次失败 — 对批次中每个实体逐一生成 fallback
+                    for idx, entity in job_info:
+                        entity_type = entity.get_entity_type() or "Entity"
+                        logger.error(f"处理实体 {entity.name} 时发生异常: {str(e)}")
+                        with lock:
+                            completed_count[0] += 1
+                        fallback = OasisAgentProfile(
+                            user_id=idx,
+                            user_name=self._generate_username(entity.name),
+                            name=entity.name,
+                            bio=f"{entity_type}: {entity.name}",
+                            persona=entity.summary or "A participant in social discussions.",
+                            source_entity_uuid=entity.uuid,
+                            source_entity_type=entity_type,
+                        )
+                        profiles[idx] = fallback
+                        save_profiles_realtime(fallback)
         
         print(f"\n{'='*60}")
         print(f"人设生成完成！共生成 {len([p for p in profiles if p])} 个Agent")
