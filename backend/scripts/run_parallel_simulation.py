@@ -168,6 +168,8 @@ try:
         generate_twitter_agent_graph,
         generate_reddit_agent_graph
     )
+    from oasis.social_platform.channel import Channel
+    from oasis.social_platform.platform import Platform
 except ImportError as e:
     print(f"错误: 缺少依赖 {e}")
     print("请先安装: pip install oasis-ai camel-ai")
@@ -1152,12 +1154,20 @@ async def run_twitter_simulation(
     if os.path.exists(db_path):
         os.remove(db_path)
     
+    # 直接构造 Platform，指定 recsys_type="random" 避免加载 twhin-bert（峰值 10-13GB OOM）
+    _twitter_channel = Channel()
+    _twitter_platform = Platform(
+        db_path=db_path,
+        channel=_twitter_channel,
+        recsys_type="random",
+        refresh_rec_post_count=2,
+        max_rec_post_len=2,
+        following_post_count=3,
+    )
     result.env = oasis.make(
         agent_graph=result.agent_graph,
-        platform=oasis.DefaultPlatformType.TWITTER,
-        database_path=db_path,
-        semaphore=3,  # GLM 免费额度 RPM 有限，严格限制并发防止 429
-        recsys_type="random",  # 避免加载 twhin-bert 模型导致 OOM（峰值 10-13GB）
+        platform=_twitter_platform,
+        semaphore=3,
     )
     
     await result.env.reset()
@@ -1344,12 +1354,21 @@ async def run_reddit_simulation(
     if os.path.exists(db_path):
         os.remove(db_path)
     
+    # 直接构造 Platform，指定 recsys_type="random" 避免加载 twhin-bert（峰值 10-13GB OOM）
+    _reddit_channel = Channel()
+    _reddit_platform = Platform(
+        db_path=db_path,
+        channel=_reddit_channel,
+        recsys_type="random",
+        allow_self_rating=True,
+        show_score=True,
+        max_rec_post_len=100,
+        refresh_rec_post_count=5,
+    )
     result.env = oasis.make(
         agent_graph=result.agent_graph,
-        platform=oasis.DefaultPlatformType.REDDIT,
-        database_path=db_path,
-        semaphore=3,  # GLM 免费额度 RPM 有限，严格限制并发防止 429
-        recsys_type="random",  # 避免加载 twhin-bert 模型导致 OOM（峰值 10-13GB）
+        platform=_reddit_platform,
+        semaphore=3,
     )
     
     await result.env.reset()
