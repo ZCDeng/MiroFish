@@ -225,9 +225,9 @@ class RobustOpenAIGenericClient(OpenAIGenericClient):
         else:
             api_params["max_tokens"] = self.max_tokens
         # Qwen3 系列默认开启思维链(CoT)，关闭以大幅降低延迟
-        # 必须用 top-level enable_thinking=False，extra_body 方式对 dashscope 无效
+        # Qwen3 系列非流式调用必须禁用 CoT；通过 extra_body 传递（OpenAI SDK 不接受直接 kwarg）
         if "qwen3" in model_name.lower():
-            api_params["enable_thinking"] = False
+            api_params["extra_body"] = {"enable_thinking": False}
 
         last_error = None
         for attempt in range(self.MAX_RETRIES + 1):

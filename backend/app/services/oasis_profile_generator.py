@@ -392,10 +392,10 @@ class OasisProfileGenerator:
         for attempt in range(max_attempts):
             try:
                 # 禁用 Qwen3 CoT 推理链，减少 2-5s 延迟和 200-500 token 消耗
-                # 必须用 top-level enable_thinking=False，extra_body 方式对 dashscope 无效
+                # Qwen3 系列非流式调用必须禁用 CoT；通过 extra_body 传递（OpenAI SDK 不接受直接 kwarg）
                 extra_kwargs = {}
                 if "qwen3" in self.model_name.lower():
-                    extra_kwargs["enable_thinking"] = False
+                    extra_kwargs["extra_body"] = {"enable_thinking": False}
 
                 response = self.client.chat.completions.create(
                     model=self.model_name,
@@ -720,7 +720,7 @@ class OasisProfileGenerator:
             try:
                 extra_kwargs = {}
                 if "qwen3" in self.model_name.lower():
-                    extra_kwargs["enable_thinking"] = False
+                    extra_kwargs["extra_body"] = {"enable_thinking": False}
 
                 response = self.client.chat.completions.create(
                     model=self.model_name,

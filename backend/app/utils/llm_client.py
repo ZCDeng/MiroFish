@@ -61,9 +61,9 @@ class LLMClient:
         if response_format:
             kwargs["response_format"] = response_format
 
-        # Qwen3 系列非流式调用必须显式设置 enable_thinking=False，否则报错
+        # Qwen3 系列非流式调用必须禁用 CoT；通过 extra_body 传递（OpenAI SDK 不接受直接 kwarg）
         if "qwen3" in self.model.lower():
-            kwargs["enable_thinking"] = False
+            kwargs["extra_body"] = {"enable_thinking": False}
 
         response = self.client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content

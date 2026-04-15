@@ -442,7 +442,7 @@ class SimulationConfigGenerator:
             try:
                 extra_kwargs = {}
                 if "qwen3" in self.model_name.lower():
-                    extra_kwargs["enable_thinking"] = False
+                    extra_kwargs["extra_body"] = {"enable_thinking": False}
 
                 response = self.client.chat.completions.create(
                     model=self.model_name,
