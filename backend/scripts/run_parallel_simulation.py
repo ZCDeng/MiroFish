@@ -1033,9 +1033,15 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     
     print(f"{config_label} model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
     
+    # Qwen3 系列非流式调用必须禁用 CoT；通过 model_config_dict 传入 extra_body
+    model_config_dict = {}
+    if "qwen3" in llm_model.lower():
+        model_config_dict["extra_body"] = {"enable_thinking": False}
+
     return ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
         model_type=llm_model,
+        model_config_dict=model_config_dict or None,
     )
 
 
