@@ -19,6 +19,7 @@ from openai import AsyncOpenAI
 from graphiti_core import Graphiti
 from graphiti_core.cross_encoder.client import CrossEncoderClient
 from graphiti_core.embedder.client import EmbedderClient
+from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 from graphiti_core.errors import GraphitiError, NodeNotFoundError
 from graphiti_core.llm_client.config import LLMConfig
 from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
@@ -301,7 +302,16 @@ class GraphBuilderService:
                 max_retries=Config.GRAPHITI_REQUEST_RETRIES,
             ),
         )
-        embedder = FallbackEmbedder()
+        if Config.GRAPHITI_EMBEDDER_API_KEY and Config.GRAPHITI_EMBEDDER_BASE_URL:
+            embedder = OpenAIEmbedder(
+                config=OpenAIEmbedderConfig(
+                    api_key=Config.GRAPHITI_EMBEDDER_API_KEY,
+                    base_url=Config.GRAPHITI_EMBEDDER_BASE_URL,
+                    embedding_model=Config.GRAPHITI_EMBEDDER_MODEL,
+                )
+            )
+        else:
+            embedder = FallbackEmbedder()
         cross_encoder = FallbackCrossEncoder()
 
         return Graphiti(

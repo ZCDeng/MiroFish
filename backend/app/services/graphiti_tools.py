@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
 from graphiti_core import Graphiti
+from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -336,10 +337,20 @@ class GraphitiToolsService:
         logger.info("GraphitiToolsService 初始化完成")
         
     def _get_client(self) -> Graphiti:
+        embedder = None
+        if Config.GRAPHITI_EMBEDDER_API_KEY and Config.GRAPHITI_EMBEDDER_BASE_URL:
+            embedder = OpenAIEmbedder(
+                config=OpenAIEmbedderConfig(
+                    api_key=Config.GRAPHITI_EMBEDDER_API_KEY,
+                    base_url=Config.GRAPHITI_EMBEDDER_BASE_URL,
+                    embedding_model=Config.GRAPHITI_EMBEDDER_MODEL,
+                )
+            )
         return Graphiti(
             uri=self.neo4j_uri,
             user=self.neo4j_user,
-            password=self.neo4j_password
+            password=self.neo4j_password,
+            embedder=embedder,
         )
     
     @property

@@ -67,6 +67,9 @@ class Config:
     NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
     NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "password")
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    GRAPHITI_EMBEDDER_API_KEY = os.environ.get("GRAPHITI_EMBEDDER_API_KEY", os.environ.get("OPENAI_API_KEY"))
+    GRAPHITI_EMBEDDER_BASE_URL = os.environ.get("GRAPHITI_EMBEDDER_BASE_URL")
+    GRAPHITI_EMBEDDER_MODEL = os.environ.get("GRAPHITI_EMBEDDER_MODEL", "text-embedding-3-small")
 
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
