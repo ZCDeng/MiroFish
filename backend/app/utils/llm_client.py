@@ -61,10 +61,6 @@ class LLMClient:
         if response_format:
             kwargs["response_format"] = response_format
 
-        # Qwen3 系列非流式调用必须禁用 CoT；通过 extra_body 传递（OpenAI SDK 不接受直接 kwarg）
-        if "qwen3" in self.model.lower():
-            kwargs["extra_body"] = {"enable_thinking": False}
-
         response = self.client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content
         # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除

@@ -35,6 +35,8 @@ class Config:
     LLM_API_KEY = os.environ.get("LLM_API_KEY")
     LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
     LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-4o-mini")
+    # OASIS 模拟 Agent 专用模型（速度优先，默认与主 LLM 相同）
+    SIMULATION_AGENT_MODEL = os.environ.get("SIMULATION_AGENT_MODEL", LLM_MODEL_NAME)
 
     GRAPHITI_API_KEY = os.environ.get("GRAPHITI_API_KEY", LLM_API_KEY)
     GRAPHITI_BASE_URL = os.environ.get("GRAPHITI_BASE_URL", LLM_BASE_URL)

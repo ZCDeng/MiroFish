@@ -369,7 +369,7 @@ class SimulationConfigGenerator:
             event_config=event_config,
             twitter_config=twitter_config,
             reddit_config=reddit_config,
-            llm_model=self.model_name,
+            llm_model=Config.SIMULATION_AGENT_MODEL,
             llm_base_url=self.base_url,
             generation_reasoning=" | ".join(reasoning_parts)
         )
@@ -440,10 +440,6 @@ class SimulationConfigGenerator:
         
         for attempt in range(max_attempts):
             try:
-                extra_kwargs = {}
-                if "qwen3" in self.model_name.lower():
-                    extra_kwargs["extra_body"] = {"enable_thinking": False}
-
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=[
