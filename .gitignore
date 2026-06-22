@@ -65,8 +65,14 @@ frontend/test-results/
 node_modules/
 
 # 生成文件
+docker
 docker/
 docs/
+
+# Mempalace wing 工具本地文件
+.mempalace-wing
+mempalace.yaml
+entities.json
 
 # 临时调试脚本
 backend/patched_*.py
