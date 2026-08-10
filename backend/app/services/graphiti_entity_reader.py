@@ -12,6 +12,7 @@ from graphiti_core import Graphiti
 
 from ..config import Config
 from ..utils.graphiti_attrs import read_attributes as _read_attributes
+from .graphiti_client import build_graphiti_client
 from ..utils.logger import get_logger
 
 logger = get_logger('mirofish.graphiti_entity_reader')
@@ -83,11 +84,7 @@ class GraphitiEntityReader:
             raise ValueError("NEO4J_URI 未配置")
             
     def _get_client(self) -> Graphiti:
-        return Graphiti(
-            uri=self.neo4j_uri,
-            user=self.neo4j_user,
-            password=self.neo4j_password
-        )
+        return build_graphiti_client()
     
     def get_all_nodes(self, graph_id: str) -> List[Dict[str, Any]]:
         """获取图谱的所有节点"""

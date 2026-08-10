@@ -18,6 +18,7 @@ from graphiti_core.nodes import EpisodeType
 
 from ..config import Config
 from ..utils.logger import get_logger
+from .graphiti_client import build_graphiti_client
 
 logger = get_logger('mirofish.graphiti_memory_updater')
 
@@ -231,11 +232,7 @@ class GraphitiMemoryUpdater:
         logger.info(f"GraphitiMemoryUpdater 初始化完成: graph_id={graph_id}, batch_size={self.BATCH_SIZE}")
     
     def _get_client(self) -> Graphiti:
-        return Graphiti(
-            uri=self.neo4j_uri,
-            user=self.neo4j_user,
-            password=self.neo4j_password
-        )
+        return build_graphiti_client()
         
     def _get_platform_display_name(self, platform: str) -> str:
         return self.PLATFORM_DISPLAY_NAMES.get(platform.lower(), platform)

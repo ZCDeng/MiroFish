@@ -136,8 +136,13 @@ class Config:
             errors.append("LLM_API_KEY 未配置")
         if not cls.NEO4J_URI:
             errors.append("NEO4J_URI 未配置")
-        if not cls.OPENAI_API_KEY:
-            errors.append("OPENAI_API_KEY 未配置")
         if not cls.GRAPHITI_API_KEY:
             errors.append("GRAPHITI_API_KEY 未配置")
+        # OPENAI_API_KEY 不再校验：以前 Graphiti 客户端不注入 llm_client 时会就地
+        # new 一个 OpenAIClient，构造时要读这个 key。现在四处构造都走
+        # build_graphiti_client() 注入 SiliconFlow 的客户端，没人再读它。
+        if not (cls.GRAPHITI_EMBEDDER_API_KEY and cls.GRAPHITI_EMBEDDER_BASE_URL):
+            errors.append(
+                "GRAPHITI_EMBEDDER_API_KEY / GRAPHITI_EMBEDDER_BASE_URL 未配置（向量检索依赖）"
+            )
         return errors
