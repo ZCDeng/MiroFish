@@ -445,7 +445,13 @@ def build_graph():
                         uuids = builder.add_text_batches(
                             graph_id,
                             chunks,
-                            ontology=None,
+                            # db9e903 当时把这里改成 None 是为了绕 CypherTypeError ——
+                            # graphiti 0.11.6 把每个属性摊平成独立的 Neo4j 属性，
+                            # LLM 返回嵌套结构就写不进去。0.29.3 改成整个属性表
+                            # json.dumps 成一个字段，这个坑没了，本体可以接回来。
+                            # 不接的话本体生成那一步（一次 LLM 调用）等于白跑，
+                            # 实体全是没有子类型、没有属性的裸 Entity。
+                            ontology=ontology,
                             batch_size=Config.GRAPHITI_BATCH_SIZE,
                             progress_callback=add_progress_callback,
                             cancel_event=cancel_event,
