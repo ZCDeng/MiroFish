@@ -30,7 +30,9 @@ class Config:
 
     # Flask配置
     SECRET_KEY = os.environ.get("SECRET_KEY", "mirofish-secret-key")
-    DEBUG = os.environ.get("FLASK_DEBUG", "True").lower() == "true"
+    # 默认关。开着的话 Werkzeug 交互式调试控制台会跟着起来，
+    # 配合 run.py 默认绑 0.0.0.0 和 compose 映射 5002，等于对外开一个可执行任意 Python 的口子。
+    DEBUG = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
 
     # JSON配置 - 禁用ASCII转义，让中文直接显示（而不是 \uXXXX 格式）
     JSON_AS_ASCII = False
