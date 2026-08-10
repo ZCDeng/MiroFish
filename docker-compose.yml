@@ -1,9 +1,40 @@
 services:
+  neo4j:
+    # graphiti-core 0.29 要求 driver >=5.26；服务端用 5.26 LTS 与之对齐
+    image: neo4j:5.26-community
+    # 容器名要和 .env 里 NEO4J_URI=bolt://mirofish-neo4j:7687 的主机名一致
+    container_name: mirofish-neo4j
+    environment:
+      # NEO4J_PASSWORD 从 .env 读，没设就起不来（不给默认值，避免又出现 testpass 这种）
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD 必须在 .env 里设置}"
+      # Graphiti 建图时会打比较重的批量写入，堆给够
+      NEO4J_server_memory_heap_initial__size: 1G
+      NEO4J_server_memory_heap_max__size: 2G
+      NEO4J_server_memory_pagecache__size: 1G
+    ports:
+      # 7474 是 Browser，7687 是 bolt
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      # cypher-shell 能连上才算就绪，光看端口开没开不够
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_PASSWORD}\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
   mirofish:
     build: .
     container_name: mirofish
     env_file:
       - .env
+    depends_on:
+      neo4j:
+        condition: service_healthy
     ports:
       - "3000:3000"
       - "5002:5002"
@@ -12,3 +43,7 @@ services:
     memswap_limit: 16g
     volumes:
       - ./backend/uploads:/app/backend/uploads
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
