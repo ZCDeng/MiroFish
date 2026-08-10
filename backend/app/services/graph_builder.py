@@ -34,6 +34,29 @@ from .text_processor import TextProcessor
 
 logger = get_logger("mirofish.graph")
 
+# 索引只需建一次，但没有任何地方在建。graphiti-core 的 Neo4jDriver 构造时会起一批
+# CREATE INDEX 协程，事件循环先关掉的话它们跑不完 —— 空库上实测只落地了 7 个 RANGE/LOOKUP，
+# 4 个 FULLTEXT 一个都没有，而 NODE_HYBRID_SEARCH_RRF 的 BM25 那一半正好依赖全文索引。
+# 这里在第一次写图之前显式补一次，进程内只跑一次。
+_indices_ready = False
+_indices_lock = asyncio.Lock()
+
+
+async def _ensure_indices(client: Graphiti) -> None:
+    global _indices_ready
+    if _indices_ready:
+        return
+    async with _indices_lock:
+        if _indices_ready:
+            return
+        try:
+            await client.build_indices_and_constraints()
+            _indices_ready = True
+            logger.info("Graphiti 索引已确认")
+        except Exception as e:
+            # 建索引失败不该挡住写入，但要留下痕迹 —— 检索质量会受影响
+            logger.warning(f"建索引失败，检索质量可能下降: {e}")
+
 
 class FallbackCrossEncoder(CrossEncoderClient):
     async def rank(self, query: str, passages: List[str]) -> List[tuple[str, float]]:
@@ -516,6 +539,7 @@ class GraphBuilderService:
 
         async def _add_batches():
             client = self._get_client()
+            await _ensure_indices(client)
             episode_timeout = min(
                 Config.GRAPHITI_EPISODE_TIMEOUT,
                 max(Config.GRAPHITI_BUILD_TIMEOUT - 5.0, 5.0),
