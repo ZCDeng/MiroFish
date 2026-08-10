@@ -399,11 +399,10 @@ class OasisProfileGenerator:
                     ],
                     response_format={"type": "json_object"},
                     temperature=0.7 - (attempt * 0.1),
-                    **extra_kwargs
                 )
-                
+
                 content = response.choices[0].message.content
-                
+
                 finish_reason = response.choices[0].finish_reason
                 if finish_reason == 'length':
                     content = self._fix_truncated_json(content)
@@ -720,7 +719,6 @@ class OasisProfileGenerator:
                     ],
                     response_format={"type": "json_object"},
                     temperature=0.7 - (attempt * 0.1),
-                    **extra_kwargs
                 )
 
                 content = response.choices[0].message.content
