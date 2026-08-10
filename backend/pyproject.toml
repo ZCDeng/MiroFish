@@ -14,9 +14,14 @@ dependencies = [
     "flask-cors>=6.0.0",
     
     # LLM 相关
-    "openai>=1.0.0",
-    "graphiti-core>=0.0.1",
-    "neo4j>=5.23.0",
+    "openai>=1.91.0",
+    # 钉死 minor：graph_builder 继承了 OpenAIGenericClient 并 override 私有方法
+    # _generate_response，graphiti_tools / graphiti_entity_reader 走 driver.execute_query
+    # 打裸 Cypher，跨 minor 升级要重验这几处
+    "graphiti-core>=0.29.3,<0.30.0",
+    # 留在 5.x：camel-oasis / camel-ai 原本钉的是 5.23.0，跨到 6.x 是大版本跳跃，
+    # 而 graphiti-core 只要 >=5.26.0，没必要冒这个险
+    "neo4j>=5.26.0,<6.0.0",
     
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",
@@ -39,6 +44,13 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pipreqs>=0.5.0",
 ]
+
+[tool.uv]
+# camel-oasis 0.2.5 把 neo4j 精确钉在 ==5.23.0，而 graphiti-core 从 0.12.0 起要 >=5.26.0。
+# 这个钉子是懒钉不是真不兼容：camel-oasis 只在 oasis/social_agent/agent_graph.py 用
+# `from neo4j import GraphDatabase`，camel-ai 只用 GraphDatabase / Query / 几个 exception，
+# 都是 5.x 全系稳定 API。camel-oasis 已无更新版本（0.2.5 是最新），只能覆盖。
+override-dependencies = ["neo4j>=5.26.0,<6.0.0"]
 
 [build-system]
 requires = ["hatchling"]

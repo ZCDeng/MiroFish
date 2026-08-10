@@ -20,6 +20,10 @@ os.environ.setdefault(
     "SEMAPHORE_LIMIT", os.environ.get("GRAPHITI_SEMAPHORE_LIMIT", "5")
 )
 
+# graphiti-core 0.29 起自带 PostHog 遥测，默认开启，会把使用事件发到
+# us.i.posthog.com。这里默认关掉；要开就在 .env 里显式设成 true。
+os.environ.setdefault("GRAPHITI_TELEMETRY_ENABLED", "false")
+
 
 class Config:
     """Flask配置类"""

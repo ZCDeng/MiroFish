@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from graphiti_core import Graphiti
 
 from ..config import Config
+from ..utils.graphiti_attrs import read_attributes as _read_attributes
 from ..utils.logger import get_logger
 
 logger = get_logger('mirofish.graphiti_entity_reader')
@@ -107,7 +108,7 @@ class GraphitiEntityReader:
                         "name": n.get("name", ""),
                         "labels": list(n.labels) if n.labels else [],
                         "summary": n.get("summary", ""),
-                        "attributes": dict(n),
+                        "attributes": _read_attributes(n),
                     })
                 return nodes_data
             finally:
@@ -137,7 +138,7 @@ class GraphitiEntityReader:
                         "fact": r.get("fact", ""),
                         "source_node_uuid": record["source_uuid"],
                         "target_node_uuid": record["target_uuid"],
-                        "attributes": dict(r),
+                        "attributes": _read_attributes(r),
                     })
                 return edges_data
             finally:
@@ -165,7 +166,7 @@ class GraphitiEntityReader:
                         "fact": r.get("fact", ""),
                         "source_node_uuid": record["source_uuid"],
                         "target_node_uuid": record["target_uuid"],
-                        "attributes": dict(r),
+                        "attributes": _read_attributes(r),
                     })
                 return edges_data
             finally:
@@ -293,7 +294,7 @@ class GraphitiEntityReader:
                     "name": n.get("name", ""),
                     "labels": list(n.labels) if n.labels else [],
                     "summary": n.get("summary", ""),
-                    "attributes": dict(n),
+                    "attributes": _read_attributes(n),
                 }
             finally:
                 await client.close()

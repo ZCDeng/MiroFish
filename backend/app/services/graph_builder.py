@@ -27,6 +27,7 @@ from graphiti_core.nodes import EpisodeType
 from pydantic import BaseModel, Field
 
 from ..models.task import TaskManager, TaskStatus
+from ..utils.graphiti_attrs import read_attributes
 from ..utils.logger import get_logger
 from .text_processor import TextProcessor
 
@@ -762,11 +763,7 @@ class GraphBuilderService:
                                 if l != "Entity"
                             ],
                             "summary": n.get("summary", ""),
-                            "attributes": {
-                                k: v
-                                for k, v in dict(n).items()
-                                if isinstance(v, (str, int, float, bool, type(None)))
-                            },
+                            "attributes": read_attributes(n),
                             "created_at": str(n.get("created_at", "")),
                         }
                     )
@@ -790,11 +787,7 @@ class GraphBuilderService:
                             "target_node_uuid": target_uuid,
                             "source_node_name": node_map.get(source_uuid, ""),
                             "target_node_name": node_map.get(target_uuid, ""),
-                            "attributes": {
-                                k: v
-                                for k, v in dict(r).items()
-                                if isinstance(v, (str, int, float, bool, type(None)))
-                            },
+                            "attributes": read_attributes(r),
                             "created_at": str(r.get("created_at", "")),
                             "valid_at": str(r.get("valid_at", "")),
                             "invalid_at": str(r.get("invalid_at", "")),

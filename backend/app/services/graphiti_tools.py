@@ -13,6 +13,7 @@ from graphiti_core import Graphiti
 from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
 
 from ..config import Config
+from ..utils.graphiti_attrs import read_attributes
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
 from .graphiti_entity_reader import GraphitiEntityReader
@@ -518,7 +519,7 @@ class GraphitiToolsService:
                     name=n.get("name", ""),
                     labels=list(n.labels) if n.labels else [],
                     summary=n.get("summary", ""),
-                    attributes=dict(n)
+                    attributes=read_attributes(n)
                 )
             finally:
                 await client.close()
