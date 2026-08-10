@@ -919,9 +919,28 @@ class GraphitiToolsService:
                 result.summary = f"采访API调用失败: {error_msg}"
                 return result
             
-            api_interviews = api_result.get("interviews", [])
-            
+            # SimulationRunner.interview_agents_batch 把 IPC 返回体整个放在 "result" 下
+            # （simulation_runner.py:1554-1560），里面是
+            # {"interviews_count": N, "results": {"<platform>_<agent_id>": {...}}}。
+            # 这里原来读的是 api_result["interviews"]，那个键从来不存在，于是每次都拿到
+            # 空列表，报告里写「所有Agent均未返回有效回答」，而 agent 其实答了。
+            payload = api_result.get("result") or {}
+            raw_results = payload.get("results") or {}
+            if isinstance(raw_results, dict):
+                api_interviews = list(raw_results.values())
+            elif isinstance(raw_results, list):
+                api_interviews = raw_results
+            else:
+                api_interviews = []
+
+            if not api_interviews:
+                logger.warning(
+                    f"采访返回体里没有可用结果，payload keys={list(payload.keys())}"
+                )
+
             for i, api_interview in enumerate(api_interviews):
+                if not isinstance(api_interview, dict):
+                    continue
                 agent_idx = api_interview.get("agent_id")
                 response_text = api_interview.get("response", "")
                 
@@ -957,21 +976,78 @@ class GraphitiToolsService:
             
         return result
         
+    @staticmethod
+    def _normalize_profile(p: Dict[str, Any], index: int) -> Dict[str, Any]:
+        """把不同来源的人设字段名对齐到采访逻辑要的那几个。
+
+        twitter CSV 的表头是 user_id / name / username / user_char / description，
+        reddit JSON 用的是 bio / persona / profession。下游统一按 id / name / role / bio
+        取值，其中 _select_agents_for_interview 里有一句 p.get('bio')[:100]，
+        bio 缺失会直接 TypeError —— 所以这几个键必须保证存在且是字符串。
+        """
+        out = dict(p)
+        raw_id = p.get("id", p.get("user_id", index))
+        try:
+            out["id"] = int(raw_id)
+        except (TypeError, ValueError):
+            out["id"] = index
+        out["name"] = str(
+            p.get("name") or p.get("realname") or p.get("username") or f"agent_{out['id']}"
+        )
+        out["role"] = str(p.get("role") or p.get("profession") or p.get("user_char") or "")
+        out["bio"] = str(
+            p.get("bio") or p.get("description") or p.get("persona") or p.get("user_char") or ""
+        )
+        return out
+
     def _load_agent_profiles(self, simulation_id: str) -> List[Dict[str, Any]]:
-        """加载模拟的Agent人设文件"""
+        """加载模拟的 Agent 人设。
+
+        原来只找 agent_profiles.json，而全仓库没有任何代码写过这个文件名 ——
+        SimulationManager 落盘的是 reddit_profiles.json 和 twitter_profiles.csv
+        （simulation_manager.py:365-378）。于是 interview_agents 工具每次都拿到空列表，
+        报告里那段「采访人数: 0 / 0 位模拟Agent」就是这么来的，模拟跑出来的东西
+        一条都没进报告。
+
+        这里按实际落盘的文件名读，json 和 csv 两种都认。
+        """
+        import csv
         import os
-        from ..models.project import ProjectManager
-        
+
         sim_dir = os.path.join(Config.OASIS_SIMULATION_DATA_DIR, simulation_id)
-        profiles_file = os.path.join(sim_dir, "agent_profiles.json")
-        
-        if os.path.exists(profiles_file):
+
+        # 老文件名留在最前面，万一哪天真有人写它
+        candidates = [
+            "agent_profiles.json",
+            "reddit_profiles.json",
+            "twitter_profiles.json",
+            "twitter_profiles.csv",
+            "reddit_profiles.csv",
+        ]
+
+        for fname in candidates:
+            path = os.path.join(sim_dir, fname)
+            if not os.path.exists(path):
+                continue
             try:
-                with open(profiles_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                if fname.endswith(".json"):
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    profiles = data if isinstance(data, list) else data.get("profiles", [])
+                else:
+                    with open(path, "r", encoding="utf-8", newline="") as f:
+                        profiles = list(csv.DictReader(f))
+                if profiles:
+                    profiles = [self._normalize_profile(p, i) for i, p in enumerate(profiles)]
+                    logger.info(f"采访人设读自 {fname}，共 {len(profiles)} 条")
+                    return profiles
             except Exception as e:
-                logger.error(f"读取人设文件失败: {str(e)}")
-        
+                logger.warning(f"读取人设文件 {fname} 失败: {e}")
+
+        logger.warning(
+            f"模拟 {simulation_id} 目录下找不到任何人设文件，采访工具将返回空结果。"
+            f"找过: {', '.join(candidates)}"
+        )
         return []
         
     def _select_agents_for_interview(
