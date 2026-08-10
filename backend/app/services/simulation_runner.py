@@ -437,7 +437,20 @@ class SimulationRunner:
             env = os.environ.copy()
             env['PYTHONUTF8'] = '1'  # Python 3.7+ 支持，让所有 open() 默认使用 UTF-8
             env['PYTHONIOENCODING'] = 'utf-8'  # 确保 stdout/stderr 使用 UTF-8
-            
+
+            # 模拟 agent 用第 2 层模型（便宜那个），不要用主 LLM。
+            # simulation_config_generator 把 SIMULATION_AGENT_MODEL 写进了 config JSON 的
+            # llm_model 字段，但模拟脚本是先读环境变量 LLM_MODEL_NAME、为空才回退到 config
+            # （run_parallel_simulation.py:1017、1021-1022）。而 config.py 的
+            # load_dotenv(override=True) 早把 .env 里的 LLM_MODEL_NAME 灌进了本进程，
+            # os.environ.copy() 又原样传下去，那条回退分支永远走不到 —— config 上写着
+            # Qwen2.5-72B，实跑却是 DeepSeek-V3。
+            # 在这里覆盖掉，parallel / twitter / reddit 三个脚本一起修好，且只影响子进程，
+            # 父进程的图谱构建和报告生成继续用主 LLM。
+            if Config.SIMULATION_AGENT_MODEL:
+                env['LLM_MODEL_NAME'] = Config.SIMULATION_AGENT_MODEL
+                logger.info(f"模拟子进程模型: {Config.SIMULATION_AGENT_MODEL}")
+
             # 设置工作目录为模拟目录（数据库等文件会生成在此）
             # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
             process = subprocess.Popen(

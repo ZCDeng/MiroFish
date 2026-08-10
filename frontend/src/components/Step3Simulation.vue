@@ -399,7 +399,13 @@ const doStartSimulation = async () => {
       simulation_id: props.simulationId,
       platform: 'parallel',
       force: true,  // 强制重新开始
-      enable_graph_memory_update: true  // 开启动态图谱更新
+      // 关掉动态图谱更新。开着的话 GraphitiMemoryUpdater 会把模拟期的 agent 发帖
+      // 用同一个 group_id 写回图谱（graphiti_memory_updater.py:334-341），
+      // 文档抽出来的实体和模拟产生的碎实体混在一起，事后分不开。
+      // 后端接口默认就是 false，这里以前写死 true，点一次界面就污染一次。
+      // 要恢复这个能力，先让 updater 写到独立 group_id（比如
+      // `${graph_id}_sim_${simulation_id}`），隔离之后再开。
+      enable_graph_memory_update: false
     }
     
     if (props.maxRounds) {
