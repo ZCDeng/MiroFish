@@ -262,14 +262,35 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     if not os.path.exists(simulation_dir):
         return False, {"reason": "模拟目录不存在"}
     
-    # 必要文件列表（不包括脚本，脚本位于 backend/scripts/）
-    required_files = [
-        "state.json",
-        "simulation_config.json",
-        "reddit_profiles.json",
-        "twitter_profiles.csv"
-    ]
-    
+    # 人设文件按启用的平台要，不能两个都硬要。
+    # 以前这里无条件列了 reddit_profiles.json + twitter_profiles.csv，而
+    # SimulationManager 只给启用的平台写文件（simulation_manager.py:365-378）。
+    # 于是 enable_reddit=false 建出来的模拟永远缺 reddit_profiles.json，
+    # is_prepared 恒为 False，第二次 /start 直接 400，连 force=true 都救不了 ——
+    # force 的清理逻辑就在 is_prepared 为真的那个分支里面，先被短路了。
+    state_file = os.path.join(simulation_dir, "state.json")
+    enable_twitter, enable_reddit = True, True
+    try:
+        import json as _json
+        with open(state_file, "r", encoding="utf-8") as f:
+            _peek = _json.load(f)
+        enable_twitter = _peek.get("enable_twitter", True)
+        enable_reddit = _peek.get("enable_reddit", True)
+    except Exception:
+        # 读不到就退回两个都要，跟原来的行为一致
+        pass
+
+    profile_files = []
+    if enable_reddit:
+        profile_files.append("reddit_profiles.json")
+    if enable_twitter:
+        profile_files.append("twitter_profiles.csv")
+    if not profile_files:
+        # 两个都没启用，理论上创建时就该拦住；这里至少要有一个人设文件
+        profile_files = ["reddit_profiles.json", "twitter_profiles.csv"]
+
+    required_files = ["state.json", "simulation_config.json"] + profile_files
+
     # 检查文件是否存在
     existing_files = []
     missing_files = []
@@ -288,7 +309,6 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         }
     
     # 检查state.json中的状态
-    state_file = os.path.join(simulation_dir, "state.json")
     try:
         import json
         with open(state_file, 'r', encoding='utf-8') as f:
@@ -308,17 +328,31 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         # - completed: 运行完成，说明准备早就完成了
         # - stopped: 已停止，说明准备早就完成了
         # - failed: 运行失败（但准备是完成的）
-        prepared_statuses = ["ready", "preparing", "running", "completed", "stopped", "failed"]
+        # paused 是 /stop 之后的状态（SimulationRunner.stop_simulation 写的），
+        # 漏了它的话停一次就再也起不来
+        prepared_statuses = [
+            "ready", "preparing", "running", "completed", "stopped", "paused", "failed"
+        ]
         if status in prepared_statuses and config_generated:
-            # 获取文件统计信息
-            profiles_file = os.path.join(simulation_dir, "reddit_profiles.json")
-            config_file = os.path.join(simulation_dir, "simulation_config.json")
-            
+            # 人设条数从实际存在的那个文件数，别写死 reddit
             profiles_count = 0
-            if os.path.exists(profiles_file):
-                with open(profiles_file, 'r', encoding='utf-8') as f:
-                    profiles_data = json.load(f)
-                    profiles_count = len(profiles_data) if isinstance(profiles_data, list) else 0
+            for pf in profile_files:
+                path = os.path.join(simulation_dir, pf)
+                if not os.path.exists(path):
+                    continue
+                try:
+                    if pf.endswith(".json"):
+                        with open(path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        profiles_count = len(data) if isinstance(data, list) else 0
+                    else:
+                        import csv as _csv
+                        with open(path, 'r', encoding='utf-8', newline='') as f:
+                            profiles_count = sum(1 for _ in _csv.DictReader(f))
+                    if profiles_count:
+                        break
+                except Exception as e:
+                    logger.warning(f"统计人设条数失败 {pf}: {e}")
             
             # 如果状态是preparing但文件已完成，自动更新状态为ready
             if status == "preparing":
