@@ -209,6 +209,9 @@ class SimulationRunner:
     4. 支持暂停/停止/恢复操作
     """
     
+    # 保护 start_simulation 里「检查是否在跑 + 写 STARTING 占位」这段临界区
+    _start_lock = threading.Lock()
+
     # 运行状态存储目录
     RUN_STATE_DIR = os.path.join(
         os.path.dirname(__file__),
@@ -336,18 +339,60 @@ class SimulationRunner:
         Returns:
             SimulationRunState
         """
-        # 检查是否已在运行
-        existing = cls.get_run_state(simulation_id)
-        if existing and existing.runner_status in [RunnerStatus.RUNNING, RunnerStatus.STARTING]:
-            raise ValueError(f"模拟已在运行中: {simulation_id}")
-        
+        # 「检查是否已在运行」和「写 STARTING 占位」之间原本隔着读配置、拼命令等
+        # 三十多行，两个并发的 /start 会双双通过检查，起两个子进程写同一个 sqlite。
+        # 这里把检查和占位包成原子段，后面那段准备工作在锁外做。
+        with cls._start_lock:
+            existing = cls.get_run_state(simulation_id)
+            if existing and existing.runner_status in [
+                RunnerStatus.RUNNING, RunnerStatus.STARTING
+            ]:
+                raise ValueError(f"模拟已在运行中: {simulation_id}")
+            cls._save_run_state(SimulationRunState(
+                simulation_id=simulation_id,
+                runner_status=RunnerStatus.STARTING,
+            ))
+
+        try:
+            return cls._start_simulation_locked(
+                simulation_id, platform, max_rounds,
+                enable_graph_memory_update, graph_id,
+            )
+        except Exception:
+            # 上面已经写了 STARTING 占位，准备阶段中途失败的话要把它清掉，
+            # 否则这个模拟会永远显示「已在运行中」，下次 /start 直接被自己拦住
+            cls._clear_starting_placeholder(simulation_id)
+            raise
+
+    @classmethod
+    def _clear_starting_placeholder(cls, simulation_id: str) -> None:
+        """把停留在 STARTING 的占位状态收回 FAILED。"""
+        try:
+            st = cls.get_run_state(simulation_id)
+            if st and st.runner_status == RunnerStatus.STARTING:
+                st.runner_status = RunnerStatus.FAILED
+                st.error = "启动准备阶段失败"
+                cls._save_run_state(st)
+        except Exception as e:
+            logger.warning(f"清理 STARTING 占位失败: {e}")
+
+    @classmethod
+    def _start_simulation_locked(
+        cls,
+        simulation_id: str,
+        platform: str,
+        max_rounds: Optional[int],
+        enable_graph_memory_update: bool,
+        graph_id: Optional[str],
+    ) -> SimulationRunState:
+        """start_simulation 的实际准备与拉起逻辑（占位已写好，锁已释放）。"""
         # 加载模拟配置
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         config_path = os.path.join(sim_dir, "simulation_config.json")
-        
+
         if not os.path.exists(config_path):
             raise ValueError(f"模拟配置不存在，请先调用 /prepare 接口")
-        
+
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
