@@ -593,7 +593,8 @@ class TwitterSimulationRunner:
             agent_graph=self.agent_graph,
             platform=oasis.DefaultPlatformType.TWITTER,
             database_path=db_path,
-            semaphore=3,  # GLM 免费额度 RPM 有限，严格限制并发防止 429
+            # 并发上限，见 run_parallel_simulation.py 的 SIMULATION_SEMAPHORE 注释
+            semaphore=int(os.environ.get("SIMULATION_SEMAPHORE", "12")),
         )
         
         await self.env.reset()

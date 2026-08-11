@@ -1039,6 +1039,48 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     )
 
 
+# 每轮结束后给 agent 保留多少条对话记录。0 表示全清（老行为）。
+# 8f98f97 当初每轮全清是为了解决第 21 轮 283 条评论撑爆 129K 上下文的崩溃，
+# 代价是 agent 记不住自己上一轮说过什么、别人怎么回的 —— 而"记得自己说过什么"
+# 正是舆论模拟的前提之一。滑窗保留最近若干条，既不炸上下文也不完全失忆。
+AGENT_MEMORY_WINDOW = int(os.environ.get("SIMULATION_AGENT_MEMORY_WINDOW", "12"))
+
+# OASIS 每轮同时在飞的 LLM 请求数。原值写死 3，来自 3587992 —— 那时用的是 GLM
+# 免费额度，RPM 打满会级联 429。换成付费 provider 后这个 3 就是纯粹的吞吐瓶颈：
+# 每轮 N 个 agent 要串成 ceil(N/3) 批。
+# camel-oasis 自己的默认值是 128（env.py:55），那个又太激进。
+# 实测 SiliconFlow 和 DeepSeek 各打 12 并发都是全 200、无 429、也不返回限流头，
+# 所以取 12 作为默认，撞限流就往下调。
+SIMULATION_SEMAPHORE = int(os.environ.get("SIMULATION_SEMAPHORE", "12"))
+
+
+def trim_agent_memories(env, window: int = AGENT_MEMORY_WINDOW) -> None:
+    """轮末修剪所有 agent 的对话记忆，只留最近 window 条。
+
+    window <= 0 时退回 clear_memory 的全清行为。
+
+    CAMEL 的 ChatAgent.clear_memory 会清空 memory 再把 system_message 塞回去
+    （chat_agent.py:1306-1315），而 OASIS 把人设写在 system message 里
+    （agent.py:75-83），所以无论全清还是修剪，人设都不会丢。
+    """
+    for _, agent in env.agent_graph.get_agents():
+        if window <= 0:
+            agent.clear_memory()
+            continue
+        try:
+            records = agent.memory.retrieve()
+            # system message 由 clear_memory 负责重放，这里只数非 system 的部分
+            keep = [r.memory_record for r in records
+                    if getattr(r.memory_record.role_at_backend, "value", "") != "system"]
+            if len(keep) <= window:
+                continue
+            agent.clear_memory()
+            agent.memory.write_records(keep[-window:])
+        except Exception:
+            # 修剪失败就退回全清，宁可失忆也不能让上下文爆掉
+            agent.clear_memory()
+
+
 def get_active_agents_for_round(
     env,
     config: Dict[str, Any],
@@ -1167,7 +1209,7 @@ async def run_twitter_simulation(
     result.env = oasis.make(
         agent_graph=result.agent_graph,
         platform=_twitter_platform,
-        semaphore=3,
+        semaphore=SIMULATION_SEMAPHORE,
     )
     
     await result.env.reset()
@@ -1264,9 +1306,9 @@ async def run_twitter_simulation(
         actions = {agent: LLMAction() for _, agent in active_agents}
         await result.env.step(actions)
 
-        # 每轮结束后清理 agent 消息历史，防止跨轮累积导致超出上下文窗口
-        for _, agent in result.env.agent_graph.get_agents():
-            agent.clear_memory()
+        # 每轮结束后修剪 agent 消息历史，防止跨轮累积撑爆上下文窗口。
+        # 保留最近 AGENT_MEMORY_WINDOW 条，让 agent 还记得上一轮的来往。
+        trim_agent_memories(result.env)
 
         # 从数据库获取实际执行的动作并记录
         actual_actions, last_rowid = fetch_new_actions_from_db(
@@ -1372,7 +1414,7 @@ async def run_reddit_simulation(
     result.env = oasis.make(
         agent_graph=result.agent_graph,
         platform=_reddit_platform,
-        semaphore=3,
+        semaphore=SIMULATION_SEMAPHORE,
     )
     
     await result.env.reset()
@@ -1477,9 +1519,9 @@ async def run_reddit_simulation(
         actions = {agent: LLMAction() for _, agent in active_agents}
         await result.env.step(actions)
 
-        # 每轮结束后清理 agent 消息历史，防止跨轮累积导致超出上下文窗口
-        for _, agent in result.env.agent_graph.get_agents():
-            agent.clear_memory()
+        # 每轮结束后修剪 agent 消息历史，防止跨轮累积撑爆上下文窗口。
+        # 保留最近 AGENT_MEMORY_WINDOW 条，让 agent 还记得上一轮的来往。
+        trim_agent_memories(result.env)
 
         # 从数据库获取实际执行的动作并记录
         actual_actions, last_rowid = fetch_new_actions_from_db(

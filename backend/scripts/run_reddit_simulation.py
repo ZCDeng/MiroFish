@@ -578,7 +578,8 @@ class RedditSimulationRunner:
             agent_graph=self.agent_graph,
             platform=oasis.DefaultPlatformType.REDDIT,
             database_path=db_path,
-            semaphore=30,  # 限制最大并发 LLM 请求数，防止 API 过载
+            # 并发上限，见 run_parallel_simulation.py 的 SIMULATION_SEMAPHORE 注释
+            semaphore=int(os.environ.get("SIMULATION_SEMAPHORE", "12")),
         )
         
         await self.env.reset()
