@@ -36,6 +36,7 @@ from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.openai_chat_compat import create_chat_completion
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
 from .graphiti_entity_reader import EntityNode, GraphitiEntityReader
 from .graphiti_tools import GraphitiToolsService
@@ -391,7 +392,8 @@ class OasisProfileGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": self._get_system_prompt(is_individual)},
@@ -711,7 +713,8 @@ class OasisProfileGenerator:
 
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": self._get_system_prompt(is_individual=True)},

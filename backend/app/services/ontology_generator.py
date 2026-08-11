@@ -9,6 +9,7 @@ import re
 from typing import Dict, Any, List, Optional
 from ..utils.llm_client import LLMClient
 from ..utils.locale import get_language_instruction
+from ..utils.ontology import normalize_ontology_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -285,15 +286,21 @@ class OntologyGenerator:
         # 记录原始名称到 PascalCase 的映射，用于后续修正 edge 的 source_targets 引用
         entity_name_map = {}
         for entity in result["entity_types"]:
-            # 强制将 entity name 转为 PascalCase（Zep API 要求）
+            # 强制将 entity name 转为 PascalCase。
+            # 这条规则是从 Zep 时代继承下来的，Graphiti 侧同样需要：
+            # graph_builder._parse_ontology_to_entity_types 用它做 pydantic 类名。
             if "name" in entity:
                 original_name = entity["name"]
                 entity["name"] = _to_pascal_case(original_name)
                 if entity["name"] != original_name:
                     logger.warning(f"Entity type name '{original_name}' auto-converted to '{entity['name']}'")
                 entity_name_map[original_name] = entity["name"]
-            if "attributes" not in entity:
-                entity["attributes"] = []
+            # LLM 有时把 attribute 返回成裸字符串或别的形状，下游
+            # graph_builder.py 直接取 attr_def["name"] 会 TypeError。
+            # 这里统一归一，顺便剔掉撞 graphiti 保留字的属性名。
+            entity["attributes"] = normalize_ontology_attributes(
+                entity.get("attributes")
+            )
             if "examples" not in entity:
                 entity["examples"] = []
             # 确保description不超过100字符
@@ -316,8 +323,9 @@ class OntologyGenerator:
                     st["target"] = entity_name_map[st["target"]]
             if "source_targets" not in edge:
                 edge["source_targets"] = []
-            if "attributes" not in edge:
-                edge["attributes"] = []
+            edge["attributes"] = normalize_ontology_attributes(
+                edge.get("attributes")
+            )
             if len(edge.get("description", "")) > 100:
                 edge["description"] = edge["description"][:97] + "..."
 

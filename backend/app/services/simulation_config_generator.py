@@ -20,6 +20,7 @@ from openai import OpenAI
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ..utils.openai_chat_compat import create_chat_completion
 from ..utils.locale import get_language_instruction, t
 from .graphiti_entity_reader import EntityNode, GraphitiEntityReader
 
@@ -440,7 +441,8 @@ class SimulationConfigGenerator:
         
         for attempt in range(max_attempts):
             try:
-                response = self.client.chat.completions.create(
+                response = create_chat_completion(
+                    self.client,
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
