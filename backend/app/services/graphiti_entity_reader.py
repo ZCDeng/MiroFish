@@ -21,6 +21,15 @@ logger = get_logger('mirofish.graphiti_entity_reader')
 T = TypeVar('T')
 
 
+def _warn_if_capped(count: int, what: str) -> None:
+    """命中行数上限就说出来，别让截断看着像图本来就这么小。"""
+    if count >= Config.GRAPHITI_MAX_GRAPH_ROWS:
+        logger.warning(
+            f"读取{what}命中 GRAPHITI_MAX_GRAPH_ROWS={Config.GRAPHITI_MAX_GRAPH_ROWS} 上限，"
+            f"结果已被截断。调高该值或改成分页读取。"
+        )
+
+
 @dataclass
 class EntityNode:
     """实体节点数据结构"""
@@ -94,8 +103,9 @@ class GraphitiEntityReader:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:Entity) WHERE n.group_id = $group_id RETURN n",
-                    group_id=graph_id
+                    "MATCH (n:Entity) WHERE n.group_id = $group_id RETURN n LIMIT $row_limit",
+                    group_id=graph_id,
+                    row_limit=Config.GRAPHITI_MAX_GRAPH_ROWS
                 )
                 nodes_data = []
                 for record in records:
@@ -112,6 +122,7 @@ class GraphitiEntityReader:
                 await client.close()
                 
         nodes_data = asyncio.run(_get())
+        _warn_if_capped(len(nodes_data), "节点")
         logger.info(f"共获取 {len(nodes_data)} 个节点")
         return nodes_data
 
@@ -123,8 +134,9 @@ class GraphitiEntityReader:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:Entity)-[r:RELATES_TO]->(m:Entity) WHERE n.group_id = $group_id RETURN r, n.uuid AS source_uuid, m.uuid AS target_uuid",
-                    group_id=graph_id
+                    "MATCH (n:Entity)-[r:RELATES_TO]->(m:Entity) WHERE n.group_id = $group_id RETURN r, n.uuid AS source_uuid, m.uuid AS target_uuid LIMIT $row_limit",
+                    group_id=graph_id,
+                    row_limit=Config.GRAPHITI_MAX_GRAPH_ROWS
                 )
                 edges_data = []
                 for record in records:
@@ -142,6 +154,7 @@ class GraphitiEntityReader:
                 await client.close()
                 
         edges_data = asyncio.run(_get())
+        _warn_if_capped(len(edges_data), "边")
         logger.info(f"共获取 {len(edges_data)} 条边")
         return edges_data
     
@@ -151,8 +164,9 @@ class GraphitiEntityReader:
             client = self._get_client()
             try:
                 records, _, _ = await client.driver.execute_query(
-                    "MATCH (n:Entity)-[r:RELATES_TO]-(m:Entity) WHERE n.uuid = $uuid RETURN r, startNode(r).uuid AS source_uuid, endNode(r).uuid AS target_uuid",
-                    uuid=node_uuid
+                    "MATCH (n:Entity)-[r:RELATES_TO]-(m:Entity) WHERE n.uuid = $uuid RETURN r, startNode(r).uuid AS source_uuid, endNode(r).uuid AS target_uuid LIMIT $row_limit",
+                    uuid=node_uuid,
+                    row_limit=Config.GRAPHITI_MAX_GRAPH_ROWS
                 )
                 edges_data = []
                 for record in records:

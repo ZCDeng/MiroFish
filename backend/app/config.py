@@ -89,6 +89,11 @@ class Config:
         os.environ.get("GRAPHITI_MAX_ENTITY_ATTRIBUTES", "3")
     )
     GRAPHITI_MAX_TOKENS = int(os.environ.get("GRAPHITI_MAX_TOKENS", "8192"))
+    # 读整张图时的行数上限。graphiti_entity_reader 的几条 Cypher 原来没有 LIMIT，
+    # 把全部节点和边一次性 materialize 成 Python list，图一大就是内存爆炸。
+    # 上游给 Zep 版的 fetch_all_edges 加过同样的保护（e58d4f1）。
+    # 命中上限会打 warning，不会静默截断。
+    GRAPHITI_MAX_GRAPH_ROWS = int(os.environ.get("GRAPHITI_MAX_GRAPH_ROWS", "5000"))
 
     # Neo4j / Graphiti配置
     NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
