@@ -664,6 +664,12 @@ SECTION_SYSTEM_PROMPT_TEMPLATE = """\
    - 不要添加模拟中不存在的信息
    - 如果某方面信息不足，如实说明
 
+5. 【禁止捏造数据】
+   - ❌ 禁止捏造用户名、引用、统计数字或互动数据
+   - ❌ 禁止在回复中包含 <tool_result> 块 — 只有系统会提供工具结果
+   - ✅ 只能引用真实出现在工具结果中的实体、引用和数据
+   - 如果工具结果中没有相关内容，应如实说明，而非编造
+
 ═══════════════════════════════════════════════════════════════
 【⚠️ 格式规范 - 极其重要！】
 ═══════════════════════════════════════════════════════════════
@@ -1133,7 +1139,40 @@ class ReportAgent:
             if params_desc:
                 desc_parts.append(f"  参数: {params_desc}")
         return "\n".join(desc_parts)
-    
+
+    @staticmethod
+    def _strip_fake_tool_results(response: str) -> str:
+        """Strip any <tool_result> blocks the LLM fabricated in its response.
+
+        When the LLM generates a <tool_call> block and then continues to generate
+        a <tool_result> block in the same response, we must strip the fake result
+        before appending to message history. The real tool result will be injected
+        separately by the system.
+        """
+        tag_pattern = re.compile(r'</?tool_result\b[^>]*>', flags=re.IGNORECASE)
+        parts = []
+        cursor = 0
+        depth = 0
+
+        for match in tag_pattern.finditer(response):
+            if depth == 0:
+                parts.append(response[cursor:match.start()])
+
+            if match.group(0).lstrip().startswith('</'):
+                depth = max(0, depth - 1)
+            else:
+                depth += 1
+            cursor = match.end()
+
+        if depth == 0:
+            parts.append(response[cursor:])
+
+        cleaned = ''.join(parts)
+        # Treat a malformed opening tag without a closing `>` as unsafe too.
+        cleaned = re.sub(r'<tool_result\b.*$', '', cleaned, flags=re.IGNORECASE | re.DOTALL)
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()
+
     def plan_outline(
         self, 
         progress_callback: Optional[Callable] = None
@@ -1335,7 +1374,8 @@ class ReportAgent:
 
                 if conflict_retries <= 2:
                     # 前两次：丢弃本次响应，要求 LLM 重新回复
-                    messages.append({"role": "assistant", "content": response})
+                    cleaned_response = ReportAgent._strip_fake_tool_results(response)
+                    messages.append({"role": "assistant", "content": cleaned_response})
                     messages.append({
                         "role": "user",
                         "content": (
@@ -1373,9 +1413,10 @@ class ReportAgent:
 
             # ── 情况1：LLM 输出了 Final Answer ──
             if has_final_answer:
+                cleaned_response = ReportAgent._strip_fake_tool_results(response)
                 # 工具调用次数不足，拒绝并要求继续调工具
                 if tool_calls_count < min_tool_calls:
-                    messages.append({"role": "assistant", "content": response})
+                    messages.append({"role": "assistant", "content": cleaned_response})
                     unused_tools = all_tools - used_tools
                     unused_hint = f"（这些工具还未使用，推荐用一下他们: {', '.join(unused_tools)}）" if unused_tools else ""
                     messages.append({
@@ -1389,7 +1430,7 @@ class ReportAgent:
                     continue
 
                 # 正常结束
-                final_answer = response.split("Final Answer:")[-1].strip()
+                final_answer = cleaned_response.split("Final Answer:")[-1].strip()
                 logger.info(t('report.sectionGenDone', title=section.title, count=tool_calls_count))
 
                 if self.report_logger:
@@ -1405,7 +1446,8 @@ class ReportAgent:
             if has_tool_calls:
                 # 工具额度已耗尽 → 明确告知，要求输出 Final Answer
                 if tool_calls_count >= self.MAX_TOOL_CALLS_PER_SECTION:
-                    messages.append({"role": "assistant", "content": response})
+                    cleaned_response = ReportAgent._strip_fake_tool_results(response)
+                    messages.append({"role": "assistant", "content": cleaned_response})
                     messages.append({
                         "role": "user",
                         "content": REACT_TOOL_LIMIT_MSG.format(
@@ -1453,7 +1495,8 @@ class ReportAgent:
                 if unused_tools and tool_calls_count < self.MAX_TOOL_CALLS_PER_SECTION:
                     unused_hint = REACT_UNUSED_TOOLS_HINT.format(unused_list="、".join(unused_tools))
 
-                messages.append({"role": "assistant", "content": response})
+                cleaned_response = ReportAgent._strip_fake_tool_results(response)
+                messages.append({"role": "assistant", "content": cleaned_response})
                 messages.append({
                     "role": "user",
                     "content": REACT_OBSERVATION_TEMPLATE.format(
@@ -1468,7 +1511,8 @@ class ReportAgent:
                 continue
 
             # ── 情况3：既没有工具调用，也没有 Final Answer ──
-            messages.append({"role": "assistant", "content": response})
+            cleaned_response = ReportAgent._strip_fake_tool_results(response)
+            messages.append({"role": "assistant", "content": cleaned_response})
 
             if tool_calls_count < min_tool_calls:
                 # 工具调用次数不足，推荐未用过的工具
@@ -1488,7 +1532,7 @@ class ReportAgent:
             # 工具调用已足够，LLM 输出了内容但没带 "Final Answer:" 前缀
             # 直接将这段内容作为最终答案，不再空转
             logger.info(t('report.sectionNoPrefix', title=section.title, count=tool_calls_count))
-            final_answer = response.strip()
+            final_answer = cleaned_response
 
             if self.report_logger:
                 self.report_logger.log_section_content(
@@ -1837,6 +1881,7 @@ class ReportAgent:
                 # 没有工具调用，直接返回响应
                 clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', response, flags=re.DOTALL)
                 clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
+                clean_response = ReportAgent._strip_fake_tool_results(clean_response)
                 
                 return {
                     "response": clean_response.strip(),
@@ -1857,7 +1902,8 @@ class ReportAgent:
                 tool_calls_made.append(call)
             
             # 将结果添加到消息
-            messages.append({"role": "assistant", "content": response})
+            cleaned_response = ReportAgent._strip_fake_tool_results(response)
+            messages.append({"role": "assistant", "content": cleaned_response})
             observation = "\n".join([f"[{r['tool']}结果]\n{r['result']}" for r in tool_results])
             messages.append({
                 "role": "user",
@@ -1873,6 +1919,7 @@ class ReportAgent:
         # 清理响应
         clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', final_response, flags=re.DOTALL)
         clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
+        clean_response = ReportAgent._strip_fake_tool_results(clean_response)
         
         return {
             "response": clean_response.strip(),

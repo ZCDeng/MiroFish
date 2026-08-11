@@ -519,12 +519,21 @@ const fetchRunStatus = async () => {
       
       // 检测模拟是否已完成（通过 runner_status 或平台完成状态判断）
       const isCompleted = data.runner_status === 'completed' || data.runner_status === 'stopped'
+      const isFailed = data.runner_status === 'failed'
       
       // 额外检查：如果后端还没来得及更新 runner_status，但平台已经报告完成
       // 通过检测 twitter_completed 和 reddit_completed 状态判断
       const platformsCompleted = checkPlatformsCompleted(data)
       
-      if (isCompleted || platformsCompleted) {
+      // An explicit runner failure is authoritative. Platform completion flags
+      // can be stale or partial when one subprocess exits successfully before
+      // another subprocess fails, so inferred completion must not mask it.
+      if (isFailed) {
+        addLog(t('log.simFailed') + (data.error ? `: ${data.error}` : ''))
+        phase.value = 2
+        stopPolling()
+        emit('update-status', 'error')
+      } else if (isCompleted || platformsCompleted) {
         if (platformsCompleted && !isCompleted) {
           addLog(t('log.allPlatformsCompleted'))
         }
