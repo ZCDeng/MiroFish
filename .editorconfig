@@ -1,0 +1,23 @@
+# 统一编辑器行为，主要目的是别再让尾随空格回来。
+# 2026-08 清过一次，24 个文件 1963 行。
+# 注意 trim_trailing_whitespace 对多行字符串一样生效，
+# 而这个仓库把 LLM prompt 模板放在三引号里，编辑器批量 trim 时留意别改到 prompt 内容。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.py]
+indent_style = space
+indent_size = 4
+
+[*.{js,vue,json,yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# Markdown 里行尾两个空格是换行语法，不能 trim
+[*.md]
+trim_trailing_whitespace = false
