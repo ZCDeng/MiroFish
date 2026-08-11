@@ -16,6 +16,7 @@ from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
 from ..utils.file_parser import FileParser
 from ..utils.logger import get_logger
+from ..utils.api_errors import error_response
 from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
 from ..services.graphiti_memory_updater import GraphitiMemoryManager
@@ -242,9 +243,7 @@ def generate_ontology():
         )
 
     except Exception as e:
-        return jsonify(
-            {"success": False, "error": str(e), "traceback": traceback.format_exc()}
-        ), 500
+        return error_response(e)
 
 
 # ============== 接口2：构建图谱 ==============
@@ -486,7 +485,10 @@ def build_graph():
 
                 if add_result[0] == "err":
                     _, exc, tb = add_result
-                    raise RuntimeError(f"add_text_batches failed: {exc}\n{tb}") from exc
+                    # 子线程的栈只写日志。拼进异常消息的话，str(e) 会一路带着它
+                    # 流进 task.error，再经 Task.to_dict() 返回给前端。
+                    build_logger.error(f"[{task_id}] add_text_batches 子线程失败\n{tb}")
+                    raise RuntimeError(f"add_text_batches failed: {exc}") from exc
 
                 episode_uuids = add_result[1]
 
@@ -541,11 +543,14 @@ def build_graph():
                 project.error = str(e)
                 ProjectManager.save_project(project)
 
+                # task.error 经 Task.to_dict()（models/task.py:51）原样返回给前端，
+                # 所以这里不能放 traceback。完整栈上面那行 build_logger.debug
+                # 已经写进服务端日志了。
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.FAILED,
-                    message=f"构建失败: {str(e)}",
-                    error=traceback.format_exc(),
+                    message=f"构建失败: {str(e)[:200]}",
+                    error=f"{type(e).__name__}: {str(e)[:200]}",
                 )
             finally:
                 final_task = task_manager.get_task(task_id)
@@ -587,9 +592,7 @@ def build_graph():
         )
 
     except Exception as e:
-        return jsonify(
-            {"success": False, "error": str(e), "traceback": traceback.format_exc()}
-        ), 500
+        return error_response(e)
 
 
 # ============== 任务查询接口 ==============
@@ -636,9 +639,7 @@ def get_graph_data(graph_id: str):
         return jsonify({"success": True, "data": graph_data})
 
     except Exception as e:
-        return jsonify(
-            {"success": False, "error": str(e), "traceback": traceback.format_exc()}
-        ), 500
+        return error_response(e)
 
 
 @graph_bp.route("/delete/<graph_id>", methods=["DELETE"])
@@ -656,6 +657,4 @@ def delete_graph(graph_id: str):
         return jsonify({"success": True, "message": f"图谱已删除: {graph_id}"})
 
     except Exception as e:
-        return jsonify(
-            {"success": False, "error": str(e), "traceback": traceback.format_exc()}
-        ), 500
+        return error_response(e)

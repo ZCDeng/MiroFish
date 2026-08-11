@@ -187,8 +187,12 @@ class GraphBuilderService:
         except Exception as e:
             import traceback
 
-            error_msg = f"{str(e)}\n{traceback.format_exc()}"
-            self.task_manager.fail_task(task_id, error_msg)
+            # 完整栈只进服务端日志。fail_task 的内容会经 Task.to_dict()
+            # （models/task.py:51）返回给前端，不能带路径和局部变量。
+            logger.error(f"[{task_id}] 图谱构建失败\n{traceback.format_exc()}")
+            self.task_manager.fail_task(
+                task_id, f"{type(e).__name__}: {str(e)[:200]}"
+            )
 
     def create_graph(self, name: str) -> str:
         """创建图谱（返回一个唯一的group_id）"""
