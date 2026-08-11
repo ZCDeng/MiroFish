@@ -41,8 +41,17 @@ class Config:
     LLM_API_KEY = os.environ.get("LLM_API_KEY")
     LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
     LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-4o-mini")
-    # OASIS 模拟 Agent 专用模型（速度优先，默认与主 LLM 相同）
+    # OASIS 模拟 Agent 专用的一整套 provider 配置。模拟是全链路里调用量最大的一段
+    # （轮数 × agent 数），值得单独指一个便宜的 provider。
+    # 三项各自回退到主 LLM，所以只改模型名也能用（同 provider 换小模型）。
+    # 模拟脚本读的是 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL_NAME 三个环境变量
+    # （run_parallel_simulation.py:1015-1017），simulation_runner 起子进程时会用
+    # 这三项把它们覆盖掉。
     SIMULATION_AGENT_MODEL = os.environ.get("SIMULATION_AGENT_MODEL", LLM_MODEL_NAME)
+    SIMULATION_AGENT_API_KEY = os.environ.get("SIMULATION_AGENT_API_KEY", LLM_API_KEY)
+    SIMULATION_AGENT_BASE_URL = os.environ.get(
+        "SIMULATION_AGENT_BASE_URL", LLM_BASE_URL
+    )
     # chat_json 遇到「推理占满预算、没输出内容」时翻倍重试的上限。
     # 推理模型（DeepSeek v4 等）光思考就能吃掉好几千 token。
     LLM_MAX_TOKENS_CEILING = int(os.environ.get("LLM_MAX_TOKENS_CEILING", "16384"))

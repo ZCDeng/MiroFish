@@ -447,9 +447,18 @@ class SimulationRunner:
             # Qwen2.5-72B，实跑却是 DeepSeek-V3。
             # 在这里覆盖掉，parallel / twitter / reddit 三个脚本一起修好，且只影响子进程，
             # 父进程的图谱构建和报告生成继续用主 LLM。
+            # 三项一起覆盖。只换模型名的话，模型和 base_url 会来自两个不同的
+            # provider，请求直接 404 或 401。
             if Config.SIMULATION_AGENT_MODEL:
                 env['LLM_MODEL_NAME'] = Config.SIMULATION_AGENT_MODEL
-                logger.info(f"模拟子进程模型: {Config.SIMULATION_AGENT_MODEL}")
+            if Config.SIMULATION_AGENT_API_KEY:
+                env['LLM_API_KEY'] = Config.SIMULATION_AGENT_API_KEY
+            if Config.SIMULATION_AGENT_BASE_URL:
+                env['LLM_BASE_URL'] = Config.SIMULATION_AGENT_BASE_URL
+            logger.info(
+                f"模拟子进程 LLM: {Config.SIMULATION_AGENT_MODEL} @ "
+                f"{Config.SIMULATION_AGENT_BASE_URL}"
+            )
 
             # 设置工作目录为模拟目录（数据库等文件会生成在此）
             # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
