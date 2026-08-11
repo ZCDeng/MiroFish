@@ -201,8 +201,17 @@ class GraphitiMemoryUpdater:
         "CREATE_POST", "CREATE_COMMENT", "QUOTE_POST", "REPOST"
     }
     
-    def __init__(self, graph_id: str):
+    def __init__(self, graph_id: str, simulation_id: Optional[str] = None):
         self.graph_id = graph_id
+        self.simulation_id = simulation_id
+        # 模拟期产生的实体写到独立的 group_id，别混进文档抽出来的原始图谱。
+        # 混在一起之后没有任何字段能区分「这个实体是文档里的」还是
+        # 「agent 发帖时抽出来的」，也就没法清理和回滚。
+        # 没给 simulation_id 时退回旧行为，保持向后兼容。
+        # simulation_id 本身就是 sim_xxx 形式，直接拼会得到 _sim_sim_xxx
+        self.write_group_id = (
+            f"{graph_id}_{simulation_id}" if simulation_id else graph_id
+        )
         self.neo4j_uri = Config.NEO4J_URI
         self.neo4j_user = Config.NEO4J_USER
         self.neo4j_password = Config.NEO4J_PASSWORD
@@ -337,7 +346,7 @@ class GraphitiMemoryUpdater:
                     source_description="Agent Activity",
                     reference_time=datetime.now(),
                     source=EpisodeType.text,
-                    group_id=self.graph_id
+                    group_id=self.write_group_id
                 )
             finally:
                 await client.close()
@@ -350,7 +359,7 @@ class GraphitiMemoryUpdater:
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
                 display_name = self._get_platform_display_name(platform)
-                logger.info(f"成功批量发送 {len(activities)} 条{display_name}活动到图谱 {self.graph_id}")
+                logger.info(f"成功批量发送 {len(activities)} 条{display_name}活动到 {self.write_group_id}")
                 return
                 
             except Exception as e:
@@ -388,6 +397,7 @@ class GraphitiMemoryUpdater:
         
         return {
             "graph_id": self.graph_id,
+            "write_group_id": self.write_group_id,
             "batch_size": self.BATCH_SIZE,
             "total_activities": self._total_activities,
             "batches_sent": self._total_sent,
@@ -414,7 +424,7 @@ class GraphitiMemoryManager:
             if simulation_id in cls._updaters:
                 cls._updaters[simulation_id].stop()
             
-            updater = GraphitiMemoryUpdater(graph_id)
+            updater = GraphitiMemoryUpdater(graph_id, simulation_id=simulation_id)
             updater.start()
             cls._updaters[simulation_id] = updater
             

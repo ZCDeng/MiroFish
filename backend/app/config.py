@@ -89,6 +89,11 @@ class Config:
         os.environ.get("GRAPHITI_MAX_ENTITY_ATTRIBUTES", "3")
     )
     GRAPHITI_MAX_TOKENS = int(os.environ.get("GRAPHITI_MAX_TOKENS", "8192"))
+    # 索引没建成时是否拒绝继续写图。默认拒绝 —— 缺全文索引的图谱看着正常，
+    # 但混合检索的 BM25 那一半是废的，属于最难发现的一类故障。
+    GRAPHITI_REQUIRE_INDICES = os.environ.get(
+        "GRAPHITI_REQUIRE_INDICES", "true"
+    ).lower() == "true"
     # 读整张图时的行数上限。graphiti_entity_reader 的几条 Cypher 原来没有 LIMIT，
     # 把全部节点和边一次性 materialize 成 Python list，图一大就是内存爆炸。
     # 上游给 Zep 版的 fetch_all_edges 加过同样的保护（e58d4f1）。
@@ -170,4 +175,42 @@ class Config:
             errors.append(
                 "GRAPHITI_EMBEDDER_API_KEY / GRAPHITI_EMBEDDER_BASE_URL 未配置（向量检索依赖）"
             )
+        errors.extend(cls._validate_simulation_provider())
         return errors
+
+    # 模拟层 provider 的三项。key 和 base_url 必须同进同退：
+    # 只设其中一个，就会拿 A 家的 key 去打 B 家的端点。
+    _SIMULATION_PROVIDER_PAIR = (
+        "SIMULATION_AGENT_API_KEY",
+        "SIMULATION_AGENT_BASE_URL",
+    )
+
+    @classmethod
+    def _validate_simulation_provider(cls) -> list[str]:
+        """检查模拟 provider 配置的一致性。
+
+        模型名可以单独换（同 provider 换个小模型是常见需求），但 key 和
+        base_url 必须成对出现，否则要到子进程真正发请求时才以 401/404 暴露，
+        而那时错误信息只说认证失败，不会指向配置。
+        """
+        import os as _os
+
+        present = [k for k in cls._SIMULATION_PROVIDER_PAIR if _os.environ.get(k)]
+        if present and len(present) != len(cls._SIMULATION_PROVIDER_PAIR):
+            missing = [k for k in cls._SIMULATION_PROVIDER_PAIR if k not in present]
+            return [
+                f"模拟 provider 配置不完整：已设 {', '.join(present)}，"
+                f"缺 {', '.join(missing)}。key 和 base_url 必须同时指向同一家，"
+                "否则会拿一家的密钥去打另一家的端点。"
+                "要沿用主 LLM 就三项都别设。"
+            ]
+
+        # 只换模型名而 key/base_url 继承主 LLM 时，提醒模型名得是主 provider 认识的
+        model_overridden = bool(_os.environ.get("SIMULATION_AGENT_MODEL"))
+        if model_overridden and not present:
+            if cls.SIMULATION_AGENT_BASE_URL != cls.LLM_BASE_URL:
+                return [
+                    "SIMULATION_AGENT_MODEL 单独覆盖时，base_url 沿用主 LLM，"
+                    f"请确认 {cls.LLM_BASE_URL} 提供 {cls.SIMULATION_AGENT_MODEL}"
+                ]
+        return []

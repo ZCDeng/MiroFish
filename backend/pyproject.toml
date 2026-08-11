@@ -2,7 +2,10 @@
 name = "mirofish-backend"
 version = "0.1.0"
 description = "MiroFish - 简洁通用的群体智能引擎，预测万物"
-requires-python = ">=3.11,<3.13"
+# camel-oasis 和 unstructured 的元数据都要求 <3.12，声明 <3.13 会让
+# uv pip check 报不兼容，而 3.12 上 oasis 是否真能长期跑没验证过。
+# 收窄到 3.11 与实际依赖对齐。
+requires-python = ">=3.11,<3.12"
 license = { text = "AGPL-3.0" }
 authors = [
     { name = "MiroFish Team" }

@@ -49,8 +49,21 @@ _indices_ready = False
 _indices_lock = asyncio.Lock()
 
 
+class IndexBuildError(RuntimeError):
+    """索引没建成。继续写图会得到一个检索不可用的图谱。"""
+
+
 async def ensure_indices(client: Graphiti) -> None:
-    """在第一次写图之前补一次索引，进程内只跑一次。"""
+    """在第一次写图之前补一次索引，进程内只跑一次。
+
+    失败默认直接抛。早先这里只打 warning 然后放行，那等于制造一个
+    「看着建成了、检索是废的」的图谱 —— 全文索引缺失时
+    NODE_HYBRID_SEARCH_RRF 的 BM25 那一半不工作，报告质量降下来却没有
+    任何失败状态可查，正是这个项目里最难排查的那类故障。
+
+    要回到旧行为就把 GRAPHITI_REQUIRE_INDICES 设成 false，
+    那时依然打 warning，但至少是显式选择的。
+    """
     global _indices_ready
     if _indices_ready:
         return
@@ -62,8 +75,13 @@ async def ensure_indices(client: Graphiti) -> None:
             _indices_ready = True
             logger.info("Graphiti 索引已确认")
         except Exception as e:
-            # 建索引失败不该挡住写入，但要留下痕迹 —— 检索质量会受影响
-            logger.warning(f"建索引失败，检索质量可能下降: {e}")
+            if Config.GRAPHITI_REQUIRE_INDICES:
+                raise IndexBuildError(
+                    f"Graphiti 索引创建失败，拒绝继续写图：{e}。"
+                    "缺全文索引会让混合检索的 BM25 部分失效，图建出来也是不可用的。"
+                    "确认 Neo4j 可写之后重试，或把 GRAPHITI_REQUIRE_INDICES 设成 false 显式放行。"
+                ) from e
+            logger.warning(f"建索引失败，检索质量会下降（已按配置放行）: {e}")
 
 
 def build_llm_client() -> OpenAIGenericClient:
