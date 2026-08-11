@@ -33,7 +33,7 @@ class AgentActivity:
     action_args: Dict[str, Any]
     round_num: int
     timestamp: str
-    
+
     def to_episode_text(self) -> str:
         """
         将活动转换为可以发送给Graphiti的文本描述
@@ -52,22 +52,22 @@ class AgentActivity:
             "SEARCH_USER": self._describe_search_user,
             "MUTE": self._describe_mute,
         }
-        
+
         describe_func = action_descriptions.get(self.action_type, self._describe_generic)
         description = describe_func()
-        
+
         return f"{self.agent_name}: {description}"
-    
+
     def _describe_create_post(self) -> str:
         content = self.action_args.get("content", "")
         if content:
             return f"发布了一条帖子：「{content}」"
         return "发布了一条帖子"
-    
+
     def _describe_like_post(self) -> str:
         post_content = self.action_args.get("post_content", "")
         post_author = self.action_args.get("post_author_name", "")
-        
+
         if post_content and post_author:
             return f"点赞了{post_author}的帖子：「{post_content}」"
         elif post_content:
@@ -75,11 +75,11 @@ class AgentActivity:
         elif post_author:
             return f"点赞了{post_author}的一条帖子"
         return "点赞了一条帖子"
-    
+
     def _describe_dislike_post(self) -> str:
         post_content = self.action_args.get("post_content", "")
         post_author = self.action_args.get("post_author_name", "")
-        
+
         if post_content and post_author:
             return f"踩了{post_author}的帖子：「{post_content}」"
         elif post_content:
@@ -87,11 +87,11 @@ class AgentActivity:
         elif post_author:
             return f"踩了{post_author}的一条帖子"
         return "踩了一条帖子"
-    
+
     def _describe_repost(self) -> str:
         original_content = self.action_args.get("original_content", "")
         original_author = self.action_args.get("original_author_name", "")
-        
+
         if original_content and original_author:
             return f"转发了{original_author}的帖子：「{original_content}」"
         elif original_content:
@@ -99,12 +99,12 @@ class AgentActivity:
         elif original_author:
             return f"转发了{original_author}的一条帖子"
         return "转发了一条帖子"
-    
+
     def _describe_quote_post(self) -> str:
         original_content = self.action_args.get("original_content", "")
         original_author = self.action_args.get("original_author_name", "")
         quote_content = self.action_args.get("quote_content", "") or self.action_args.get("content", "")
-        
+
         base = ""
         if original_content and original_author:
             base = f"引用了{original_author}的帖子「{original_content}」"
@@ -114,22 +114,22 @@ class AgentActivity:
             base = f"引用了{original_author}的一条帖子"
         else:
             base = "引用了一条帖子"
-        
+
         if quote_content:
             base += f"，并评论道：「{quote_content}」"
         return base
-    
+
     def _describe_follow(self) -> str:
         target_user_name = self.action_args.get("target_user_name", "")
         if target_user_name:
             return f"关注了用户「{target_user_name}」"
         return "关注了一个用户"
-    
+
     def _describe_create_comment(self) -> str:
         content = self.action_args.get("content", "")
         post_content = self.action_args.get("post_content", "")
         post_author = self.action_args.get("post_author_name", "")
-        
+
         if content:
             if post_content and post_author:
                 return f"在{post_author}的帖子「{post_content}」下评论道：「{content}」"
@@ -139,11 +139,11 @@ class AgentActivity:
                 return f"在{post_author}的帖子下评论道：「{content}」"
             return f"评论道：「{content}」"
         return "发表了评论"
-    
+
     def _describe_like_comment(self) -> str:
         comment_content = self.action_args.get("comment_content", "")
         comment_author = self.action_args.get("comment_author_name", "")
-        
+
         if comment_content and comment_author:
             return f"点赞了{comment_author}的评论：「{comment_content}」"
         elif comment_content:
@@ -151,11 +151,11 @@ class AgentActivity:
         elif comment_author:
             return f"点赞了{comment_author}的一条评论"
         return "点赞了一条评论"
-    
+
     def _describe_dislike_comment(self) -> str:
         comment_content = self.action_args.get("comment_content", "")
         comment_author = self.action_args.get("comment_author_name", "")
-        
+
         if comment_content and comment_author:
             return f"踩了{comment_author}的评论：「{comment_content}」"
         elif comment_content:
@@ -163,21 +163,21 @@ class AgentActivity:
         elif comment_author:
             return f"踩了{comment_author}的一条评论"
         return "踩了一条评论"
-    
+
     def _describe_search(self) -> str:
         query = self.action_args.get("query", "") or self.action_args.get("keyword", "")
         return f"搜索了「{query}」" if query else "进行了搜索"
-    
+
     def _describe_search_user(self) -> str:
         query = self.action_args.get("query", "") or self.action_args.get("username", "")
         return f"搜索了用户「{query}」" if query else "搜索了用户"
-    
+
     def _describe_mute(self) -> str:
         target_user_name = self.action_args.get("target_user_name", "")
         if target_user_name:
             return f"屏蔽了用户「{target_user_name}」"
         return "屏蔽了一个用户"
-    
+
     def _describe_generic(self) -> str:
         return f"执行了{self.action_type}操作"
 
@@ -200,7 +200,7 @@ class GraphitiMemoryUpdater:
     MEANINGFUL_ACTIONS = {
         "CREATE_POST", "CREATE_COMMENT", "QUOTE_POST", "REPOST"
     }
-    
+
     def __init__(self, graph_id: str, simulation_id: Optional[str] = None):
         self.graph_id = graph_id
         self.simulation_id = simulation_id
@@ -239,13 +239,13 @@ class GraphitiMemoryUpdater:
         self._skipped_count = 0
 
         logger.info(f"GraphitiMemoryUpdater 初始化完成: graph_id={graph_id}, batch_size={self.BATCH_SIZE}")
-    
+
     def _get_client(self) -> Graphiti:
         return build_graphiti_client()
-        
+
     def _get_platform_display_name(self, platform: str) -> str:
         return self.PLATFORM_DISPLAY_NAMES.get(platform.lower(), platform)
-    
+
     def start(self):
         if self._running:
             return
@@ -260,7 +260,7 @@ class GraphitiMemoryUpdater:
         )
         self._worker_thread.start()
         logger.info(f"GraphitiMemoryUpdater 已启动: graph_id={self.graph_id}")
-    
+
     def stop(self):
         self._running = False
         # 不 flush 队列：stop 通常在图谱构建前调用以释放 API 配额，
@@ -279,7 +279,7 @@ class GraphitiMemoryUpdater:
                    f"items_sent={self._total_items_sent}, "
                    f"failed={self._failed_count}, "
                    f"skipped={self._skipped_count}")
-    
+
     def add_activity(self, activity: AgentActivity):
         # 只保留有内容语义价值的 action，行为类（点赞/关注/搜索等）跳过
         if activity.action_type not in self.MEANINGFUL_ACTIONS:
@@ -289,11 +289,11 @@ class GraphitiMemoryUpdater:
         self._activity_queue.put(activity)
         self._total_activities += 1
         logger.debug(f"添加活动到Graphiti队列: {activity.agent_name} - {activity.action_type}")
-    
+
     def add_activity_from_dict(self, data: Dict[str, Any], platform: str):
         if "event_type" in data:
             return
-        
+
         activity = AgentActivity(
             platform=platform,
             agent_id=data.get("agent_id", 0),
@@ -303,9 +303,9 @@ class GraphitiMemoryUpdater:
             round_num=data.get("round", 0),
             timestamp=data.get("timestamp", datetime.now().isoformat()),
         )
-        
+
         self.add_activity(activity)
-    
+
     def _worker_loop(self):
         # 在当前线程中运行复用的 event loop
         asyncio.set_event_loop(self._loop)
@@ -329,14 +329,14 @@ class GraphitiMemoryUpdater:
             except Exception as e:
                 logger.error(f"工作循环异常: {e}")
                 time.sleep(1)
-    
+
     def _send_batch_activities(self, activities: List[AgentActivity], platform: str):
         if not activities:
             return
-        
+
         episode_texts = [activity.to_episode_text() for activity in activities]
         combined_text = "\n".join(episode_texts)
-        
+
         async def _send():
             client = self._get_client()
             try:
@@ -350,7 +350,7 @@ class GraphitiMemoryUpdater:
                 )
             finally:
                 await client.close()
-                
+
         for attempt in range(self.MAX_RETRIES):
             try:
                 # 复用已有 event loop，不每次重建
@@ -361,7 +361,7 @@ class GraphitiMemoryUpdater:
                 display_name = self._get_platform_display_name(platform)
                 logger.info(f"成功批量发送 {len(activities)} 条{display_name}活动到 {self.write_group_id}")
                 return
-                
+
             except Exception as e:
                 if attempt < self.MAX_RETRIES - 1:
                     logger.warning(f"批量发送到Graphiti失败 (尝试 {attempt + 1}/{self.MAX_RETRIES}): {e}")
@@ -369,7 +369,7 @@ class GraphitiMemoryUpdater:
                 else:
                     logger.error(f"批量发送到Graphiti失败，已重试{self.MAX_RETRIES}次: {e}")
                     self._failed_count += 1
-    
+
     def _flush_remaining(self):
         while not self._activity_queue.empty():
             try:
@@ -381,7 +381,7 @@ class GraphitiMemoryUpdater:
                     self._platform_buffers[platform].append(activity)
             except Empty:
                 break
-        
+
         with self._buffer_lock:
             for platform, buffer in self._platform_buffers.items():
                 if buffer:
@@ -390,11 +390,11 @@ class GraphitiMemoryUpdater:
                     self._send_batch_activities(buffer, platform)
             for platform in self._platform_buffers:
                 self._platform_buffers[platform] = []
-    
+
     def get_stats(self) -> Dict[str, Any]:
         with self._buffer_lock:
             buffer_sizes = {p: len(b) for p, b in self._platform_buffers.items()}
-        
+
         return {
             "graph_id": self.graph_id,
             "write_group_id": self.write_group_id,
@@ -414,27 +414,27 @@ class GraphitiMemoryManager:
     """
     管理多个模拟的Graphiti图谱记忆更新器
     """
-    
+
     _updaters: Dict[str, GraphitiMemoryUpdater] = {}
     _lock = threading.Lock()
-    
+
     @classmethod
     def create_updater(cls, simulation_id: str, graph_id: str) -> GraphitiMemoryUpdater:
         with cls._lock:
             if simulation_id in cls._updaters:
                 cls._updaters[simulation_id].stop()
-            
+
             updater = GraphitiMemoryUpdater(graph_id, simulation_id=simulation_id)
             updater.start()
             cls._updaters[simulation_id] = updater
-            
+
             logger.info(f"创建图谱记忆更新器: simulation_id={simulation_id}, graph_id={graph_id}")
             return updater
-    
+
     @classmethod
     def get_updater(cls, simulation_id: str) -> Optional[GraphitiMemoryUpdater]:
         return cls._updaters.get(simulation_id)
-    
+
     @classmethod
     def stop_updater(cls, simulation_id: str):
         with cls._lock:
@@ -442,15 +442,15 @@ class GraphitiMemoryManager:
                 cls._updaters[simulation_id].stop()
                 del cls._updaters[simulation_id]
                 logger.info(f"已停止图谱记忆更新器: simulation_id={simulation_id}")
-    
+
     _stop_all_done = False
-    
+
     @classmethod
     def stop_all(cls):
         if cls._stop_all_done:
             return
         cls._stop_all_done = True
-        
+
         with cls._lock:
             if cls._updaters:
                 for simulation_id, updater in list(cls._updaters.items()):
@@ -460,10 +460,10 @@ class GraphitiMemoryManager:
                         logger.error(f"停止更新器失败: simulation_id={simulation_id}, error={e}")
                 cls._updaters.clear()
             logger.info("已停止所有图谱记忆更新器")
-    
+
     @classmethod
     def get_all_stats(cls) -> Dict[str, Dict[str, Any]]:
         return {
-            sim_id: updater.get_stats() 
+            sim_id: updater.get_stats()
             for sim_id, updater in cls._updaters.items()
         }

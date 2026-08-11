@@ -21,7 +21,7 @@ class TruncatedResponseError(RuntimeError):
 
 class LLMClient:
     """LLM客户端"""
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -31,15 +31,15 @@ class LLMClient:
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model = model or Config.LLM_MODEL_NAME
-        
+
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
         )
-    
+
     def chat(
         self,
         messages: List[Dict[str, str]],
@@ -95,7 +95,7 @@ class LLMClient:
         if choice.finish_reason not in (None, "stop", "length", "tool_calls"):
             raise ValueError(f"模型异常终止：finish_reason={choice.finish_reason}")
         return content
-    
+
     def chat_json(
         self,
         messages: List[Dict[str, str]],

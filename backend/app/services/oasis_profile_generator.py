@@ -52,25 +52,25 @@ class OasisAgentProfile:
     name: str
     bio: str
     persona: str
-    
+
     karma: int = 1000
-    
+
     friend_count: int = 100
     follower_count: int = 150
     statuses_count: int = 500
-    
+
     age: Optional[int] = None
     gender: Optional[str] = None
     mbti: Optional[str] = None
     country: Optional[str] = None
     profession: Optional[str] = None
     interested_topics: List[str] = field(default_factory=list)
-    
+
     source_entity_uuid: Optional[str] = None
     source_entity_type: Optional[str] = None
-    
+
     created_at: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
-    
+
     def to_reddit_format(self) -> Dict[str, Any]:
         profile = {
             "user_id": self.user_id,
@@ -81,7 +81,7 @@ class OasisAgentProfile:
             "karma": self.karma,
             "created_at": self.created_at,
         }
-        
+
         if self.age:
             profile["age"] = self.age
         if self.gender:
@@ -94,9 +94,9 @@ class OasisAgentProfile:
             profile["profession"] = self.profession
         if self.interested_topics:
             profile["interested_topics"] = self.interested_topics
-        
+
         return profile
-    
+
     def to_twitter_format(self) -> Dict[str, Any]:
         profile = {
             "user_id": self.user_id,
@@ -109,7 +109,7 @@ class OasisAgentProfile:
             "statuses_count": self.statuses_count,
             "created_at": self.created_at,
         }
-        
+
         if self.age:
             profile["age"] = self.age
         if self.gender:
@@ -122,9 +122,9 @@ class OasisAgentProfile:
             profile["profession"] = self.profession
         if self.interested_topics:
             profile["interested_topics"] = self.interested_topics
-        
+
         return profile
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "user_id": self.user_id,
@@ -152,32 +152,32 @@ class OasisProfileGenerator:
     """
     OASIS Profile生成器
     """
-    
+
     MBTI_TYPES = [
         "INTJ", "INTP", "ENTJ", "ENTP",
         "INFJ", "INFP", "ENFJ", "ENFP",
         "ISTJ", "ISFJ", "ESTJ", "ESFJ",
         "ISTP", "ISFP", "ESTP", "ESFP"
     ]
-    
+
     COUNTRIES = [
-        "China", "US", "UK", "Japan", "Germany", "France", 
+        "China", "US", "UK", "Japan", "Germany", "France",
         "Canada", "Australia", "Brazil", "India", "South Korea"
     ]
-    
+
     INDIVIDUAL_ENTITY_TYPES = [
-        "student", "alumni", "professor", "person", "publicfigure", 
+        "student", "alumni", "professor", "person", "publicfigure",
         "expert", "faculty", "official", "journalist", "activist"
     ]
-    
+
     GROUP_ENTITY_TYPES = [
         "university", "governmentagency", "organization", "ngo",
         "mediaoutlet", "company", "institution", "group", "community",
         "event"
     ]
-    
+
     def __init__(
-        self, 
+        self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model_name: Optional[str] = None,
@@ -186,18 +186,18 @@ class OasisProfileGenerator:
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model_name = model_name or Config.LLM_MODEL_NAME
-        
+
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
         )
-        
+
         self.graph_id = graph_id
         self.graphiti_tools = GraphitiToolsService()
-    
+
     def generate_profile_from_entity(
         self,
         entity: EntityNode,
@@ -230,7 +230,7 @@ class OasisProfileGenerator:
                 entity_summary=entity.summary,
                 entity_attributes=entity.attributes
             )
-        
+
         return OasisAgentProfile(
             user_id=user_id,
             user_name=user_name,
@@ -250,25 +250,25 @@ class OasisProfileGenerator:
             source_entity_uuid=entity.uuid,
             source_entity_type=entity_type,
         )
-    
+
     def _generate_username(self, name: str) -> str:
         username = name.lower().replace(" ", "_")
         username = ''.join(c for c in username if c.isalnum() or c == '_')
         suffix = random.randint(100, 999)
         return f"{username}_{suffix}"
-    
+
     def _search_graphiti_for_entity(self, entity: EntityNode) -> Dict[str, Any]:
         """使用Graphiti检索实体相关信息"""
         if not self.graph_id:
             return {"facts": [], "node_summaries": [], "context": ""}
-            
+
         entity_name = entity.name
         results = {
             "facts": [],
             "node_summaries": [],
             "context": ""
         }
-        
+
         try:
             search_result = self.graphiti_tools.search_graph(
                 graph_id=self.graph_id,
@@ -276,9 +276,9 @@ class OasisProfileGenerator:
                 limit=30,
                 scope="both"
             )
-            
+
             results["facts"] = search_result.facts
-            
+
             summaries = []
             for node in search_result.nodes:
                 if node.get("summary"):
@@ -286,22 +286,22 @@ class OasisProfileGenerator:
                 elif node.get("name") and node["name"] != entity_name:
                     summaries.append(f"相关实体: {node['name']}")
             results["node_summaries"] = summaries
-            
+
             context_parts = []
             if results["facts"]:
                 context_parts.append("事实信息:\n" + "\n".join(f"- {f}" for f in results["facts"][:20]))
             if results["node_summaries"]:
                 context_parts.append("相关实体:\n" + "\n".join(f"- {s}" for s in results["node_summaries"][:10]))
             results["context"] = "\n\n".join(context_parts)
-            
+
         except Exception as e:
             logger.warning(f"Graphiti检索失败 ({entity_name}): {e}")
-            
+
         return results
-    
+
     def _build_entity_context(self, entity: EntityNode) -> str:
         context_parts = []
-        
+
         if entity.attributes:
             attrs = []
             for key, value in entity.attributes.items():
@@ -309,7 +309,7 @@ class OasisProfileGenerator:
                     attrs.append(f"- {key}: {value}")
             if attrs:
                 context_parts.append("### 实体属性\n" + "\n".join(attrs))
-        
+
         existing_facts = set()
         if entity.related_edges:
             relationships = []
@@ -317,7 +317,7 @@ class OasisProfileGenerator:
                 fact = edge.get("fact", "")
                 edge_name = edge.get("edge_name", "")
                 direction = edge.get("direction", "")
-                
+
                 if fact:
                     relationships.append(f"- {fact}")
                     existing_facts.add(fact)
@@ -326,28 +326,28 @@ class OasisProfileGenerator:
                         relationships.append(f"- {entity.name} --[{edge_name}]--> (相关实体)")
                     else:
                         relationships.append(f"- (相关实体) --[{edge_name}]--> {entity.name}")
-            
+
             if relationships:
                 context_parts.append("### 相关事实和关系\n" + "\n".join(relationships))
-        
+
         if entity.related_nodes:
             related_info = []
             for node in entity.related_nodes:
                 node_name = node.get("name", "")
                 node_labels = node.get("labels", [])
                 node_summary = node.get("summary", "")
-                
+
                 custom_labels = [l for l in node_labels if l not in ["EntityNode", "Node"]]
                 label_str = f" ({', '.join(custom_labels)})" if custom_labels else ""
-                
+
                 if node_summary:
                     related_info.append(f"- **{node_name}**{label_str}: {node_summary}")
                 else:
                     related_info.append(f"- **{node_name}**{label_str}")
-            
+
             if related_info:
                 context_parts.append("### 关联实体信息\n" + "\n".join(related_info))
-        
+
         # 若 related_edges 已包含图谱上下文，跳过额外的 Graphiti search（省去 1 次 Neo4j 往返）
         if not entity.related_edges:
             graphiti_results = self._search_graphiti_for_entity(entity)
@@ -359,15 +359,15 @@ class OasisProfileGenerator:
 
             if graphiti_results.get("node_summaries"):
                 context_parts.append("### 检索到的相关节点\n" + "\n".join(f"- {s}" for s in graphiti_results["node_summaries"][:10]))
-        
+
         return "\n\n".join(context_parts)
-    
+
     def _is_individual_entity(self, entity_type: str) -> bool:
         return entity_type.lower() in self.INDIVIDUAL_ENTITY_TYPES
-    
+
     def _is_group_entity(self, entity_type: str) -> bool:
         return entity_type.lower() in self.GROUP_ENTITY_TYPES
-    
+
     def _generate_profile_with_llm(
         self,
         entity_name: str,
@@ -377,7 +377,7 @@ class OasisProfileGenerator:
         context: str
     ) -> Dict[str, Any]:
         is_individual = self._is_individual_entity(entity_type)
-        
+
         if is_individual:
             prompt = self._build_individual_persona_prompt(
                 entity_name, entity_type, entity_summary, entity_attributes, context
@@ -389,7 +389,7 @@ class OasisProfileGenerator:
 
         max_attempts = 3
         last_error = None
-        
+
         for attempt in range(max_attempts):
             try:
                 response = create_chat_completion(
@@ -408,63 +408,63 @@ class OasisProfileGenerator:
                 finish_reason = response.choices[0].finish_reason
                 if finish_reason == 'length':
                     content = self._fix_truncated_json(content)
-                
+
                 try:
                     result = json.loads(content)
-                    
+
                     if "bio" not in result or not result["bio"]:
                         result["bio"] = entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}"
                     if "persona" not in result or not result["persona"]:
                         result["persona"] = entity_summary or f"{entity_name}是一个{entity_type}。"
-                    
+
                     return result
-                    
+
                 except json.JSONDecodeError as je:
                     result = self._try_fix_json(content, entity_name, entity_type, entity_summary)
                     if result.get("_fixed"):
                         del result["_fixed"]
                         return result
-                    
+
                     last_error = je
-                    
+
             except Exception as e:
                 last_error = e
                 time.sleep(1 * (attempt + 1))
-        
+
         return self._generate_profile_rule_based(
             entity_name, entity_type, entity_summary, entity_attributes
         )
-    
+
     def _fix_truncated_json(self, content: str) -> str:
         content = content.strip()
         open_braces = content.count('{') - content.count('}')
         open_brackets = content.count('[') - content.count(']')
-        
+
         if content and content[-1] not in '",}]':
             content += '"'
-        
+
         content += ']' * open_brackets
         content += '}' * open_braces
-        
+
         return content
-    
+
     def _try_fix_json(self, content: str, entity_name: str, entity_type: str, entity_summary: str = "") -> Dict[str, Any]:
         import re
-        
+
         content = self._fix_truncated_json(content)
-        
+
         json_match = re.search(r'\{[\s\S]*\}', content)
         if json_match:
             json_str = json_match.group()
-            
+
             def fix_string_newlines(match):
                 s = match.group(0)
                 s = s.replace('\n', ' ').replace('\r', ' ')
                 s = re.sub(r'\s+', ' ', s)
                 return s
-            
+
             json_str = re.sub(r'"[^"\\]*(?:\\.[^"\\]*)*"', fix_string_newlines, json_str)
-            
+
             try:
                 result = json.loads(json_str)
                 result["_fixed"] = True
@@ -478,30 +478,30 @@ class OasisProfileGenerator:
                     return result
                 except:
                     pass
-        
+
         bio_match = re.search(r'"bio"\s*:\s*"([^"]*)"', content)
         persona_match = re.search(r'"persona"\s*:\s*"([^"]*)', content)
-        
+
         bio = bio_match.group(1) if bio_match else (entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}")
         persona = persona_match.group(1) if persona_match else (entity_summary or f"{entity_name}是一个{entity_type}。")
-        
+
         if bio_match or persona_match:
             return {
                 "bio": bio,
                 "persona": persona,
                 "_fixed": True
             }
-        
+
         return {
             "bio": entity_summary[:200] if entity_summary else f"{entity_type}: {entity_name}",
             "persona": entity_summary or f"{entity_name}是一个{entity_type}。"
         }
-    
+
     def _get_system_prompt(self, is_individual: bool) -> str:
         """获取系统提示词"""
         base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。"
         return f"{base_prompt}\n\n{get_language_instruction()}"
-    
+
     def _build_individual_persona_prompt(
         self,
         entity_name: str,
@@ -512,7 +512,7 @@ class OasisProfileGenerator:
     ) -> str:
         attrs_str = json.dumps(_sanitize_dict(entity_attributes), ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
-        
+
         return f"""为实体生成详细的社交媒体用户人设,最大程度还原已有现实情况。
 
 实体名称: {entity_name}
@@ -559,7 +559,7 @@ class OasisProfileGenerator:
     ) -> str:
         attrs_str = json.dumps(_sanitize_dict(entity_attributes), ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
-        
+
         return f"""为机构/群体实体生成详细的社交媒体账号设定,最大程度还原已有现实情况。
 
 实体名称: {entity_name}
@@ -594,7 +594,7 @@ class OasisProfileGenerator:
 - {get_language_instruction()} (gender字段必须用英文"other")
 - age必须是整数30，gender必须是字符串"other"
 - 机构账号发言要符合其身份定位"""
-    
+
     def _generate_profile_rule_based(
         self,
         entity_name: str,
@@ -603,7 +603,7 @@ class OasisProfileGenerator:
         entity_attributes: Dict[str, Any]
     ) -> Dict[str, Any]:
         entity_type_lower = entity_type.lower()
-        
+
         if entity_type_lower in ["student", "alumni"]:
             return {
                 "bio": f"{entity_type} with interests in academics and social issues.",
@@ -615,7 +615,7 @@ class OasisProfileGenerator:
                 "profession": "Student",
                 "interested_topics": ["Education", "Social Issues", "Technology"],
             }
-        
+
         elif entity_type_lower in ["publicfigure", "expert", "faculty"]:
             return {
                 "bio": f"Expert and thought leader in their field.",
@@ -627,7 +627,7 @@ class OasisProfileGenerator:
                 "profession": entity_attributes.get("occupation", "Expert"),
                 "interested_topics": ["Politics", "Economics", "Culture & Society"],
             }
-        
+
         elif entity_type_lower in ["mediaoutlet", "socialmediaplatform"]:
             return {
                 "bio": f"Official account for {entity_name}. News and updates.",
@@ -639,7 +639,7 @@ class OasisProfileGenerator:
                 "profession": "Media",
                 "interested_topics": ["General News", "Current Events", "Public Affairs"],
             }
-        
+
         elif entity_type_lower in ["university", "governmentagency", "ngo", "organization", "company", "institution", "group", "community", "event"]:
             summary_snippet = (entity_summary[:120] + "…") if entity_summary and len(entity_summary) > 120 else entity_summary
             bio = summary_snippet or f"Official account of {entity_name}."
@@ -658,7 +658,7 @@ class OasisProfileGenerator:
                 "profession": entity_type,
                 "interested_topics": ["Public Policy", "Community", "Official Announcements"],
             }
-        
+
         else:
             return {
                 "bio": entity_summary[:150] if entity_summary else f"{entity_type}: {entity_name}",
@@ -670,7 +670,7 @@ class OasisProfileGenerator:
                 "profession": entity_type,
                 "interested_topics": ["General", "Social Issues"],
             }
-    
+
     def _build_batch_persona_prompt(self, batch_items: List[Dict[str, Any]]) -> str:
         """为 N 个 Individual 实体构建批量生成 prompt，返回 JSON 数组"""
         items_text = []
@@ -754,7 +754,7 @@ class OasisProfileGenerator:
 
     def set_graph_id(self, graph_id: str):
         self.graph_id = graph_id
-    
+
     def generate_profiles_from_entities(
         self,
         entities: List[EntityNode],
@@ -767,15 +767,15 @@ class OasisProfileGenerator:
     ) -> List[OasisAgentProfile]:
         import concurrent.futures
         from threading import Lock
-        
+
         if graph_id:
             self.graph_id = graph_id
-        
+
         total = len(entities)
         profiles = [None] * total
         completed_count = [0]
         lock = Lock()
-        
+
         def save_profiles_realtime(new_profile: "OasisAgentProfile"):
             """O(1) append-only realtime save — 每个 profile 追加一行，不重写整个文件"""
             if not realtime_output_path:
@@ -799,7 +799,7 @@ class OasisProfileGenerator:
                             writer.writerow(row)
                 except Exception as e:
                     logger.warning(f"实时保存 profiles 失败: {e}")
-        
+
         # Capture locale before spawning thread pool workers
         current_locale = get_locale()
         _BATCH_SIZE = 5  # Individual 实体每批次调用 LLM 的数量
@@ -989,17 +989,17 @@ class OasisProfileGenerator:
                         )
                         profiles[idx] = fallback
                         save_profiles_realtime(fallback)
-        
+
         print(f"\n{'='*60}")
         print(f"人设生成完成！共生成 {len([p for p in profiles if p])} 个Agent")
         print(f"{'='*60}\n")
-        
+
         return profiles
-    
+
     def _print_generated_profile(self, entity_name: str, entity_type: str, profile: OasisAgentProfile):
         separator = "-" * 70
         topics_str = ', '.join(profile.interested_topics) if profile.interested_topics else '无'
-        
+
         output_lines = [
             f"\n{separator}",
             t('progress.profileGenerated', name=entity_name, type=entity_type),
@@ -1018,10 +1018,10 @@ class OasisProfileGenerator:
             f"兴趣话题: {topics_str}",
             separator
         ]
-        
+
         output = "\n".join(output_lines)
         print(output)
-    
+
     def save_profiles(
         self,
         profiles: List[OasisAgentProfile],
@@ -1032,27 +1032,27 @@ class OasisProfileGenerator:
             self._save_twitter_csv(profiles, file_path)
         else:
             self._save_reddit_json(profiles, file_path)
-    
+
     def _save_twitter_csv(self, profiles: List[OasisAgentProfile], file_path: str):
         import csv
-        
+
         if not file_path.endswith('.csv'):
             file_path = file_path.replace('.json', '.csv')
-        
+
         with open(file_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            
+
             headers = ['user_id', 'name', 'username', 'user_char', 'description']
             writer.writerow(headers)
-            
+
             for idx, profile in enumerate(profiles):
                 user_char = profile.bio
                 if profile.persona and profile.persona != profile.bio:
                     user_char = f"{profile.bio} {profile.persona}"
                 user_char = user_char.replace('\n', ' ').replace('\r', ' ')
-                
+
                 description = profile.bio.replace('\n', ' ').replace('\r', ' ')
-                
+
                 row = [
                     idx,
                     profile.name,
@@ -1061,15 +1061,15 @@ class OasisProfileGenerator:
                     description
                 ]
                 writer.writerow(row)
-        
+
         logger.info(f"已保存 {len(profiles)} 个Twitter Profile到 {file_path} (OASIS CSV格式)")
-    
+
     def _normalize_gender(self, gender: Optional[str]) -> str:
         if not gender:
             return "other"
-        
+
         gender_lower = gender.lower().strip()
-        
+
         gender_map = {
             "男": "male",
             "女": "female",
@@ -1079,9 +1079,9 @@ class OasisProfileGenerator:
             "female": "female",
             "other": "other",
         }
-        
+
         return gender_map.get(gender_lower, "other")
-    
+
     def _save_reddit_json(self, profiles: List[OasisAgentProfile], file_path: str):
         data = []
         for idx, profile in enumerate(profiles):
@@ -1098,19 +1098,19 @@ class OasisProfileGenerator:
                 "mbti": profile.mbti if profile.mbti else "ISTJ",
                 "country": profile.country if profile.country else "中国",
             }
-            
+
             if profile.profession:
                 item["profession"] = profile.profession
             if profile.interested_topics:
                 item["interested_topics"] = profile.interested_topics
-            
+
             data.append(item)
-        
+
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        
+
         logger.info(f"已保存 {len(profiles)} 个Reddit Profile到 {file_path} (JSON格式，包含user_id字段)")
-    
+
     def save_profiles_to_json(
         self,
         profiles: List[OasisAgentProfile],

@@ -32,17 +32,17 @@ def main():
             print(f"  - {err}")
         print("\n请检查 .env 文件中的配置")
         sys.exit(1)
-    
+
     # 创建应用
     app = create_app()
-    
+
     # 获取运行配置
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
     # 5002：vite.config.js 的代理、Dockerfile 的 EXPOSE、compose 的端口映射全是 5002，
     # 这里原本默认 5001，漏配 FLASK_PORT 就会让前端所有请求打空
     port = int(os.environ.get('FLASK_PORT', 5002))
     debug = Config.DEBUG
-    
+
     # 启动服务
     # use_reloader=False: 禁止 Werkzeug 自动重载，防止重载时 cleanup_handler 杀死运行中的模拟进程
     app.run(host=host, port=port, debug=debug, threaded=True, use_reloader=False)

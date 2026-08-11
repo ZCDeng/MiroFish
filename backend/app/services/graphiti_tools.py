@@ -29,7 +29,7 @@ class SearchResult:
     nodes: List[Dict[str, Any]]
     query: str
     total_count: int
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "facts": self.facts,
@@ -38,16 +38,16 @@ class SearchResult:
             "query": self.query,
             "total_count": self.total_count
         }
-    
+
     def to_text(self) -> str:
         """转换为文本格式，供LLM理解"""
         text_parts = [f"搜索查询: {self.query}", f"找到 {self.total_count} 条相关信息"]
-        
+
         if self.facts:
             text_parts.append("\n### 相关事实:")
             for i, fact in enumerate(self.facts, 1):
                 text_parts.append(f"{i}. {fact}")
-        
+
         return "\n".join(text_parts)
 
 
@@ -59,7 +59,7 @@ class NodeInfo:
     labels: List[str]
     summary: str
     attributes: Dict[str, Any]
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "uuid": self.uuid,
@@ -68,7 +68,7 @@ class NodeInfo:
             "summary": self.summary,
             "attributes": self.attributes
         }
-    
+
     def to_text(self) -> str:
         """转换为文本格式"""
         entity_type = next((l for l in self.labels if l not in ["Entity", "Node"]), "未知类型")
@@ -91,7 +91,7 @@ class EdgeInfo:
     invalid_at: Optional[str] = None
     expired_at: Optional[str] = None
     attributes: Optional[Dict[str, Any]] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "uuid": self.uuid,
@@ -106,27 +106,27 @@ class EdgeInfo:
             "invalid_at": self.invalid_at,
             "expired_at": self.expired_at
         }
-    
+
     def to_text(self, include_temporal: bool = False) -> str:
         """转换为文本格式"""
         source = self.source_node_name or self.source_node_uuid[:8]
         target = self.target_node_name or self.target_node_uuid[:8]
         base_text = f"关系: {source} --[{self.name}]--> {target}\n事实: {self.fact}"
-        
+
         if include_temporal:
             valid_at = self.valid_at or "未知"
             invalid_at = self.invalid_at or "至今"
             base_text += f"\n时效: {valid_at} - {invalid_at}"
             if self.expired_at:
                 base_text += f" (已过期: {self.expired_at})"
-        
+
         return base_text
-    
+
     @property
     def is_expired(self) -> bool:
         """是否已过期"""
         return self.expired_at is not None
-    
+
     @property
     def is_invalid(self) -> bool:
         """是否已失效"""
@@ -145,7 +145,7 @@ class InsightForgeResult:
     total_facts: int = 0
     total_entities: int = 0
     total_relationships: int = 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "query": self.query,
@@ -158,7 +158,7 @@ class InsightForgeResult:
             "total_entities": self.total_entities,
             "total_relationships": self.total_relationships
         }
-    
+
     def to_text(self) -> str:
         text_parts = [
             f"## 未来预测深度分析",
@@ -202,7 +202,7 @@ class PanoramaResult:
     total_edges: int = 0
     active_count: int = 0
     historical_count: int = 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "query": self.query,
@@ -215,7 +215,7 @@ class PanoramaResult:
             "active_count": self.active_count,
             "historical_count": self.historical_count
         }
-    
+
     def to_text(self) -> str:
         text_parts = [
             f"## 广度搜索结果",
@@ -251,7 +251,7 @@ class AgentInterview:
     question: str
     response: str
     key_quotes: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "agent_name": self.agent_name,
@@ -261,7 +261,7 @@ class AgentInterview:
             "response": self.response,
             "key_quotes": self.key_quotes
         }
-    
+
     def to_text(self) -> str:
         text = f"**{self.agent_name}** ({self.agent_role})\n"
         text += f"_简介: {self.agent_bio}_\n\n"
@@ -285,7 +285,7 @@ class InterviewResult:
     summary: str = ""
     total_agents: int = 0
     interviewed_count: int = 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "interview_topic": self.interview_topic,
@@ -297,7 +297,7 @@ class InterviewResult:
             "total_agents": self.total_agents,
             "interviewed_count": self.interviewed_count
         }
-    
+
     def to_text(self) -> str:
         text_parts = [
             "## 深度采访报告",
@@ -324,38 +324,38 @@ class GraphitiToolsService:
     """
     Graphiti检索工具服务
     """
-    
+
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self.neo4j_uri = Config.NEO4J_URI
         self.neo4j_user = Config.NEO4J_USER
         self.neo4j_password = Config.NEO4J_PASSWORD
-        
+
         if not self.neo4j_uri:
             raise ValueError("NEO4J_URI 未配置")
-            
+
         self._llm_client = llm_client
         self.reader = GraphitiEntityReader()
         logger.info("GraphitiToolsService 初始化完成")
-        
+
     def _get_client(self) -> Graphiti:
         return build_graphiti_client()
-    
+
     @property
     def llm(self) -> LLMClient:
         if self._llm_client is None:
             self._llm_client = LLMClient()
         return self._llm_client
-    
+
     def search_graph(
-        self, 
-        graph_id: str, 
-        query: str, 
+        self,
+        graph_id: str,
+        query: str,
         limit: int = 10,
         scope: str = "edges"
     ) -> SearchResult:
         """图谱语义搜索"""
         logger.info(f"图谱搜索: graph_id={graph_id}, query={query[:50]}...")
-        
+
         async def _search():
             client = self._get_client()
             try:
@@ -364,11 +364,11 @@ class GraphitiToolsService:
                     group_ids=[graph_id],
                     num_results=limit
                 )
-                
+
                 facts = []
                 edges = []
                 nodes = []
-                
+
                 for edge in search_results:
                     if getattr(edge, 'fact', None):
                         facts.append(edge.fact)
@@ -379,7 +379,7 @@ class GraphitiToolsService:
                         "source_node_uuid": getattr(edge, 'source_node_uuid', ''),
                         "target_node_uuid": getattr(edge, 'target_node_uuid', ''),
                     })
-                
+
                 return SearchResult(
                     facts=facts,
                     edges=edges,
@@ -389,30 +389,30 @@ class GraphitiToolsService:
                 )
             finally:
                 await client.close()
-                
+
         try:
             return asyncio.run(_search())
         except Exception as e:
             logger.warning(f"Graphiti Search API失败，降级为本地搜索: {str(e)}")
             return self._local_search(graph_id, query, limit, scope)
-    
+
     def _local_search(
-        self, 
-        graph_id: str, 
-        query: str, 
+        self,
+        graph_id: str,
+        query: str,
         limit: int = 10,
         scope: str = "edges"
     ) -> SearchResult:
         """本地关键词匹配搜索"""
         logger.info(f"使用本地搜索: query={query[:30]}...")
-        
+
         facts = []
         edges_result = []
         nodes_result = []
-        
+
         query_lower = query.lower()
         keywords = [w.strip() for w in query_lower.replace(',', ' ').replace('，', ' ').split() if len(w.strip()) > 1]
-        
+
         def match_score(text: str) -> int:
             if not text:
                 return 0
@@ -424,7 +424,7 @@ class GraphitiToolsService:
                 if keyword in text_lower:
                     score += 10
             return score
-        
+
         try:
             if scope in ["edges", "both"]:
                 all_edges = self.get_all_edges(graph_id)
@@ -433,9 +433,9 @@ class GraphitiToolsService:
                     score = match_score(edge.fact) + match_score(edge.name)
                     if score > 0:
                         scored_edges.append((score, edge))
-                
+
                 scored_edges.sort(key=lambda x: x[0], reverse=True)
-                
+
                 for score, edge in scored_edges[:limit]:
                     if edge.fact:
                         facts.append(edge.fact)
@@ -446,7 +446,7 @@ class GraphitiToolsService:
                         "source_node_uuid": edge.source_node_uuid,
                         "target_node_uuid": edge.target_node_uuid,
                     })
-            
+
             if scope in ["nodes", "both"]:
                 all_nodes = self.get_all_nodes(graph_id)
                 scored_nodes = []
@@ -454,9 +454,9 @@ class GraphitiToolsService:
                     score = match_score(node.name) + match_score(node.summary)
                     if score > 0:
                         scored_nodes.append((score, node))
-                
+
                 scored_nodes.sort(key=lambda x: x[0], reverse=True)
-                
+
                 for score, node in scored_nodes[:limit]:
                     nodes_result.append({
                         "uuid": node.uuid,
@@ -466,10 +466,10 @@ class GraphitiToolsService:
                     })
                     if node.summary:
                         facts.append(f"[{node.name}]: {node.summary}")
-            
+
         except Exception as e:
             logger.error(f"本地搜索失败: {str(e)}")
-        
+
         return SearchResult(
             facts=facts,
             edges=edges_result,
@@ -477,7 +477,7 @@ class GraphitiToolsService:
             query=query,
             total_count=len(facts)
         )
-    
+
     def get_all_nodes(self, graph_id: str) -> List[NodeInfo]:
         """获取图谱的所有节点"""
         nodes_data = self.reader.get_all_nodes(graph_id)
@@ -487,7 +487,7 @@ class GraphitiToolsService:
         """获取图谱的所有边"""
         edges_data = self.reader.get_all_edges(graph_id)
         return [EdgeInfo(**e) for e in edges_data]
-    
+
     def get_node_detail(self, node_uuid: str) -> Optional[NodeInfo]:
         """获取单个节点的详细信息"""
         async def _get():
@@ -509,30 +509,30 @@ class GraphitiToolsService:
                 )
             finally:
                 await client.close()
-                
+
         try:
             return asyncio.run(_get())
         except Exception as e:
             logger.error(f"获取节点详情失败: {str(e)}")
             return None
-    
+
     def get_node_edges(self, graph_id: str, node_uuid: str) -> List[EdgeInfo]:
         """获取节点相关的所有边"""
         edges_data = self.reader.get_node_edges(node_uuid)
         return [EdgeInfo(**e) for e in edges_data]
-    
+
     def get_entities_by_type(
-        self, 
-        graph_id: str, 
+        self,
+        graph_id: str,
         entity_type: str
     ) -> List[NodeInfo]:
         """按类型获取实体"""
         all_nodes = self.get_all_nodes(graph_id)
         return [n for n in all_nodes if entity_type in n.labels]
-    
+
     def get_entity_summary(
-        self, 
-        graph_id: str, 
+        self,
+        graph_id: str,
         entity_name: str
     ) -> Dict[str, Any]:
         """获取指定实体的关系摘要"""
@@ -541,14 +541,14 @@ class GraphitiToolsService:
             query=entity_name,
             limit=20
         )
-        
+
         all_nodes = self.get_all_nodes(graph_id)
         entity_node = next((n for n in all_nodes if n.name.lower() == entity_name.lower()), None)
-        
+
         related_edges = []
         if entity_node:
             related_edges = self.get_node_edges(graph_id, entity_node.uuid)
-        
+
         return {
             "entity_name": entity_name,
             "entity_info": entity_node.to_dict() if entity_node else None,
@@ -556,22 +556,22 @@ class GraphitiToolsService:
             "related_edges": [e.to_dict() for e in related_edges],
             "total_relations": len(related_edges)
         }
-    
+
     def get_graph_statistics(self, graph_id: str) -> Dict[str, Any]:
         """获取图谱的统计信息"""
         nodes = self.get_all_nodes(graph_id)
         edges = self.get_all_edges(graph_id)
-        
+
         entity_types = {}
         for node in nodes:
             for label in node.labels:
                 if label not in ["Entity", "Node"]:
                     entity_types[label] = entity_types.get(label, 0) + 1
-        
+
         relation_types = {}
         for edge in edges:
             relation_types[edge.name] = relation_types.get(edge.name, 0) + 1
-        
+
         return {
             "graph_id": graph_id,
             "total_nodes": len(nodes),
@@ -579,9 +579,9 @@ class GraphitiToolsService:
             "entity_types": entity_types,
             "relation_types": relation_types
         }
-    
+
     def get_simulation_context(
-        self, 
+        self,
         graph_id: str,
         simulation_requirement: str,
         limit: int = 30
@@ -592,10 +592,10 @@ class GraphitiToolsService:
             query=simulation_requirement,
             limit=limit
         )
-        
+
         stats = self.get_graph_statistics(graph_id)
         all_nodes = self.get_all_nodes(graph_id)
-        
+
         entities = []
         for node in all_nodes:
             custom_labels = [l for l in node.labels if l not in ["Entity", "Node"]]
@@ -605,7 +605,7 @@ class GraphitiToolsService:
                     "type": custom_labels[0],
                     "summary": node.summary
                 })
-        
+
         return {
             "simulation_requirement": simulation_requirement,
             "related_facts": search_result.facts,
@@ -613,7 +613,7 @@ class GraphitiToolsService:
             "entities": entities[:limit],
             "total_entities": len(entities)
         }
-    
+
     def insight_forge(
         self,
         graph_id: str,
@@ -628,7 +628,7 @@ class GraphitiToolsService:
             simulation_requirement=simulation_requirement,
             sub_queries=[]
         )
-        
+
         sub_queries = self._generate_sub_queries(
             query=query,
             simulation_requirement=simulation_requirement,
@@ -636,11 +636,11 @@ class GraphitiToolsService:
             max_queries=max_sub_queries
         )
         result.sub_queries = sub_queries
-        
+
         all_facts = []
         all_edges = []
         seen_facts = set()
-        
+
         for sub_query in sub_queries:
             search_result = self.search_graph(
                 graph_id=graph_id,
@@ -653,7 +653,7 @@ class GraphitiToolsService:
                     all_facts.append(fact)
                     seen_facts.add(fact)
             all_edges.extend(search_result.edges)
-        
+
         main_search = self.search_graph(
             graph_id=graph_id,
             query=query,
@@ -664,10 +664,10 @@ class GraphitiToolsService:
             if fact not in seen_facts:
                 all_facts.append(fact)
                 seen_facts.add(fact)
-        
+
         result.semantic_facts = all_facts
         result.total_facts = len(all_facts)
-        
+
         entity_uuids = set()
         for edge_data in all_edges:
             if isinstance(edge_data, dict):
@@ -677,10 +677,10 @@ class GraphitiToolsService:
                     entity_uuids.add(source_uuid)
                 if target_uuid:
                     entity_uuids.add(target_uuid)
-        
+
         entity_insights = []
         node_map = {}
-        
+
         for uuid in list(entity_uuids):
             if not uuid:
                 continue
@@ -700,29 +700,29 @@ class GraphitiToolsService:
             except Exception as e:
                 logger.debug(f"获取节点 {uuid} 失败: {e}")
                 continue
-        
+
         result.entity_insights = entity_insights
         result.total_entities = len(entity_insights)
-        
+
         relationship_chains = []
         for edge_data in all_edges:
             if isinstance(edge_data, dict):
                 source_uuid = edge_data.get('source_node_uuid', '')
                 target_uuid = edge_data.get('target_node_uuid', '')
                 relation_name = edge_data.get('name', '')
-                
+
                 source_name = node_map.get(source_uuid, NodeInfo('', '', [], '', {})).name or source_uuid[:8]
                 target_name = node_map.get(target_uuid, NodeInfo('', '', [], '', {})).name or target_uuid[:8]
-                
+
                 chain = f"{source_name} --[{relation_name}]--> {target_name}"
                 if chain not in relationship_chains:
                     relationship_chains.append(chain)
-        
+
         result.relationship_chains = relationship_chains
         result.total_relationships = len(relationship_chains)
-        
+
         return result
-    
+
     def _generate_sub_queries(
         self,
         query: str,
@@ -757,10 +757,10 @@ class GraphitiToolsService:
                 ],
                 temperature=0.3
             )
-            
+
             sub_queries = response.get("sub_queries", [])
             return [str(sq) for sq in sub_queries[:max_queries]]
-            
+
         except Exception as e:
             logger.warning(f"生成子问题失败: {str(e)}，使用默认子问题")
             return [
@@ -769,7 +769,7 @@ class GraphitiToolsService:
                 f"{query} 的原因和影响",
                 f"{query} 的发展过程"
             ][:max_queries]
-    
+
     def panorama_search(
         self,
         graph_id: str,
@@ -779,25 +779,25 @@ class GraphitiToolsService:
     ) -> PanoramaResult:
         """广度搜索"""
         result = PanoramaResult(query=query)
-        
+
         all_nodes = self.get_all_nodes(graph_id)
         node_map = {n.uuid: n for n in all_nodes}
         result.all_nodes = all_nodes
         result.total_nodes = len(all_nodes)
-        
+
         all_edges = self.get_all_edges(graph_id, include_temporal=True)
         result.all_edges = all_edges
         result.total_edges = len(all_edges)
-        
+
         active_facts = []
         historical_facts = []
-        
+
         for edge in all_edges:
             if not edge.fact:
                 continue
-            
+
             is_historical = edge.is_expired or edge.is_invalid
-            
+
             if is_historical:
                 valid_at = edge.valid_at or "未知"
                 invalid_at = edge.invalid_at or edge.expired_at or "未知"
@@ -805,10 +805,10 @@ class GraphitiToolsService:
                 historical_facts.append(fact_with_time)
             else:
                 active_facts.append(edge.fact)
-        
+
         query_lower = query.lower()
         keywords = [w.strip() for w in query_lower.replace(',', ' ').replace('，', ' ').split() if len(w.strip()) > 1]
-        
+
         def relevance_score(fact: str) -> int:
             fact_lower = fact.lower()
             score = 0
@@ -818,17 +818,17 @@ class GraphitiToolsService:
                 if kw in fact_lower:
                     score += 10
             return score
-        
+
         active_facts.sort(key=relevance_score, reverse=True)
         historical_facts.sort(key=relevance_score, reverse=True)
-        
+
         result.active_facts = active_facts[:limit]
         result.historical_facts = historical_facts[:limit] if include_expired else []
         result.active_count = len(active_facts)
         result.historical_count = len(historical_facts)
-        
+
         return result
-    
+
     def quick_search(
         self,
         graph_id: str,
@@ -842,7 +842,7 @@ class GraphitiToolsService:
             limit=limit,
             scope="edges"
         )
-    
+
     def interview_agents(
         self,
         simulation_id: str,
@@ -853,39 +853,39 @@ class GraphitiToolsService:
     ) -> InterviewResult:
         """深度采访"""
         from .simulation_runner import SimulationRunner
-        
+
         result = InterviewResult(
             interview_topic=interview_requirement,
             interview_questions=custom_questions or []
         )
-        
+
         profiles = self._load_agent_profiles(simulation_id)
-        
+
         if not profiles:
             result.summary = "未找到可采访的Agent人设文件"
             return result
-        
+
         result.total_agents = len(profiles)
-        
+
         selected_agents, selected_indices, selection_reasoning = self._select_agents_for_interview(
             profiles=profiles,
             interview_requirement=interview_requirement,
             simulation_requirement=simulation_requirement,
             max_agents=max_agents
         )
-        
+
         result.selected_agents = selected_agents
         result.selection_reasoning = selection_reasoning
-        
+
         if not result.interview_questions:
             result.interview_questions = self._generate_interview_questions(
                 interview_requirement=interview_requirement,
                 simulation_requirement=simulation_requirement,
                 selected_agents=selected_agents
             )
-        
+
         combined_prompt = "\n".join([f"{i+1}. {q}" for i, q in enumerate(result.interview_questions)])
-        
+
         INTERVIEW_PROMPT_PREFIX = (
             "你正在接受一次采访。请结合你的人设、所有的过往记忆与行动，"
             "以纯文本方式直接回答以下问题。\n"
@@ -898,7 +898,7 @@ class GraphitiToolsService:
             "6. 回答要有实质内容，每个问题至少回答2-3句话\n\n"
         )
         optimized_prompt = f"{INTERVIEW_PROMPT_PREFIX}{combined_prompt}"
-        
+
         try:
             interviews_request = []
             for agent_idx in selected_indices:
@@ -906,14 +906,14 @@ class GraphitiToolsService:
                     "agent_id": agent_idx,
                     "prompt": optimized_prompt
                 })
-            
+
             api_result = SimulationRunner.interview_agents_batch(
                 simulation_id=simulation_id,
                 interviews=interviews_request,
                 platform=None,
                 timeout=180.0
             )
-            
+
             if not api_result.get("success", False):
                 error_msg = api_result.get("error", "未知错误")
                 # 报告正文会引用 summary，所以这里必须说清是"采访没做成"
@@ -924,7 +924,7 @@ class GraphitiToolsService:
                     f"原因：{error_msg}"
                 )
                 return result
-            
+
             # SimulationRunner.interview_agents_batch 把 IPC 返回体整个放在 "result" 下
             # （simulation_runner.py:1554-1560），里面是
             # {"interviews_count": N, "results": {"<platform>_<agent_id>": {...}}}。
@@ -949,13 +949,13 @@ class GraphitiToolsService:
                     continue
                 agent_idx = api_interview.get("agent_id")
                 response_text = api_interview.get("response", "")
-                
+
                 agent_profile = next((p for p in profiles if p.get("id") == agent_idx), None)
                 if not agent_profile:
                     continue
-                
+
                 key_quotes = self._extract_key_quotes(response_text)
-                
+
                 interview = AgentInterview(
                     agent_name=agent_profile.get("name", f"Agent {agent_idx}"),
                     agent_role=agent_profile.get("role", "未知角色"),
@@ -965,9 +965,9 @@ class GraphitiToolsService:
                     key_quotes=key_quotes
                 )
                 result.interviews.append(interview)
-            
+
             result.interviewed_count = len(result.interviews)
-            
+
             if result.interviews:
                 result.summary = self._summarize_interviews(
                     interview_requirement=interview_requirement,
@@ -975,13 +975,13 @@ class GraphitiToolsService:
                 )
             else:
                 result.summary = "所有Agent均未返回有效回答"
-                
+
         except Exception as e:
             logger.error(f"采访过程发生异常: {str(e)}")
             result.summary = f"采访过程发生异常: {str(e)}"
-            
+
         return result
-        
+
     @staticmethod
     def _normalize_profile(p: Dict[str, Any], index: int) -> Dict[str, Any]:
         """把不同来源的人设字段名对齐到采访逻辑要的那几个。
@@ -1055,7 +1055,7 @@ class GraphitiToolsService:
             f"找过: {', '.join(candidates)}"
         )
         return []
-        
+
     def _select_agents_for_interview(
         self,
         profiles: List[Dict[str, Any]],
@@ -1066,13 +1066,13 @@ class GraphitiToolsService:
         """使用LLM选择最适合采访的Agent"""
         if len(profiles) <= max_agents:
             return profiles, [p.get("id") for p in profiles], "Agent总数较少，全选"
-            
+
         profiles_summary = []
         for p in profiles:
             profiles_summary.append(
                 f"ID: {p.get('id')}, 姓名: {p.get('name')}, 角色: {p.get('role')}, 简介: {p.get('bio')[:100]}..."
             )
-            
+
         system_prompt = """你是一个专业的记者和调研专家。你的任务是从一组模拟人物中，挑选出最适合回答特定采访问题的人选。
 要求：
 1. 选择能够提供不同视角、有代表性的人物
@@ -1096,24 +1096,24 @@ class GraphitiToolsService:
                 ],
                 temperature=0.3
             )
-            
+
             selected_ids = response.get("selected_ids", [])
             reasoning = response.get("reasoning", "")
-            
+
             selected_profiles = [p for p in profiles if p.get("id") in selected_ids]
-            
+
             if not selected_profiles:
                 selected_profiles = profiles[:max_agents]
                 selected_ids = [p.get("id") for p in selected_profiles]
                 reasoning = "LLM未返回有效ID，默认选择前几个"
-                
+
             return selected_profiles, selected_ids, reasoning
-            
+
         except Exception as e:
             logger.warning(f"选择Agent失败: {str(e)}，使用默认选择")
             selected_profiles = profiles[:max_agents]
             return selected_profiles, [p.get("id") for p in selected_profiles], "选择过程出错，默认选择前几个"
-            
+
     def _generate_interview_questions(
         self,
         interview_requirement: str,
@@ -1122,7 +1122,7 @@ class GraphitiToolsService:
     ) -> List[str]:
         """生成采访问题"""
         agent_roles = [p.get("role", "未知") for p in selected_agents]
-        
+
         system_prompt = """你是一个资深记者。请根据采访需求，设计3-5个犀利、有深度、能引发思考的采访问题。
 要求：
 1. 问题要具体，避免假大空
@@ -1143,19 +1143,19 @@ class GraphitiToolsService:
                 ],
                 temperature=0.5
             )
-            
+
             questions = response.get("questions", [])
             if questions:
                 return [str(q) for q in questions]
         except Exception as e:
             logger.warning(f"生成采访问题失败: {str(e)}")
-            
+
         return [
             f"关于'{interview_requirement}'，你有什么看法？",
             "在这个事件中，你最关注的是什么？",
             "你认为接下来会如何发展？"
         ]
-        
+
     def _extract_key_quotes(self, text: str) -> List[str]:
         """从回答中提取关键引言"""
         system_prompt = """你是一个编辑。请从受访者的回答中，提取1-2句最精彩、最能代表其核心观点的原话（金句）。
@@ -1172,11 +1172,11 @@ class GraphitiToolsService:
                 ],
                 temperature=0.3
             )
-            
+
             return response.get("quotes", [])
         except Exception:
             return []
-            
+
     def _summarize_interviews(
         self,
         interview_requirement: str,
@@ -1186,7 +1186,7 @@ class GraphitiToolsService:
         interview_texts = []
         for i in interviews:
             interview_texts.append(f"受访者：{i.agent_name} ({i.agent_role})\n回答：{i.response}")
-            
+
         system_prompt = """你是一个资深新闻主编。请根据多位受访者的回答，撰写一份综合的采访摘要。
 要求：
 1. 总结核心共识和主要分歧
