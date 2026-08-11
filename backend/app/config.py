@@ -43,6 +43,9 @@ class Config:
     LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-4o-mini")
     # OASIS 模拟 Agent 专用模型（速度优先，默认与主 LLM 相同）
     SIMULATION_AGENT_MODEL = os.environ.get("SIMULATION_AGENT_MODEL", LLM_MODEL_NAME)
+    # chat_json 遇到「推理占满预算、没输出内容」时翻倍重试的上限。
+    # 推理模型（DeepSeek v4 等）光思考就能吃掉好几千 token。
+    LLM_MAX_TOKENS_CEILING = int(os.environ.get("LLM_MAX_TOKENS_CEILING", "16384"))
 
     GRAPHITI_API_KEY = os.environ.get("GRAPHITI_API_KEY", LLM_API_KEY)
     GRAPHITI_BASE_URL = os.environ.get("GRAPHITI_BASE_URL", LLM_BASE_URL)
@@ -50,6 +53,14 @@ class Config:
     GRAPHITI_SMALL_MODEL_NAME = os.environ.get(
         "GRAPHITI_SMALL_MODEL_NAME", GRAPHITI_MODEL_NAME
     )
+    # 结构化输出模式：json_schema 让服务端强制 schema，json_object 只保证是合法 JSON、
+    # 由 graphiti 把 schema 拼进 prompt。不是所有 provider 都支持 json_schema ——
+    # DeepSeek 官方 (api.deepseek.com) 会返回 400 "This response_format type is
+    # unavailable now"，SiliconFlow 则支持。留空则按 base_url 自动判断。
+    GRAPHITI_STRUCTURED_OUTPUT_MODE = os.environ.get(
+        "GRAPHITI_STRUCTURED_OUTPUT_MODE", ""
+    ).strip()
+
     GRAPHITI_REQUEST_TIMEOUT = float(os.environ.get("GRAPHITI_REQUEST_TIMEOUT", "30"))
     GRAPHITI_REQUEST_RETRIES = int(os.environ.get("GRAPHITI_REQUEST_RETRIES", "1"))
     GRAPHITI_EPISODE_TIMEOUT = float(os.environ.get("GRAPHITI_EPISODE_TIMEOUT", "25"))

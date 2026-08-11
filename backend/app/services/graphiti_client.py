@@ -96,7 +96,34 @@ def build_llm_client() -> OpenAIGenericClient:
             timeout=Config.GRAPHITI_REQUEST_TIMEOUT,
             max_retries=Config.GRAPHITI_REQUEST_RETRIES,
         ),
+        structured_output_mode=resolve_structured_output_mode(),
     )
+
+
+# base_url 里出现这些字样的 provider 不支持 response_format={"type":"json_schema"}，
+# 只能退到 json_object。实测 api.deepseek.com 会返回
+# 400 "This response_format type is unavailable now"。
+_NO_JSON_SCHEMA_HOSTS = ("api.deepseek.com", "dashscope", "bigmodel", "zhipu")
+
+
+def resolve_structured_output_mode() -> str:
+    """决定用 json_schema 还是 json_object。
+
+    json_schema 由服务端强制结构，能省掉一整类「模型自己发明字段名」的问题。
+    json_object 只保证返回合法 JSON，schema 由 graphiti 拼进 prompt
+    （openai_generic_client.py:194-200），约束弱一些但兼容性好。
+
+    显式配了 GRAPHITI_STRUCTURED_OUTPUT_MODE 就听它的，否则按 base_url 猜。
+    """
+    explicit = (Config.GRAPHITI_STRUCTURED_OUTPUT_MODE or "").lower()
+    if explicit in ("json_schema", "json_object"):
+        return explicit
+
+    base = (Config.GRAPHITI_BASE_URL or "").lower()
+    if any(h in base for h in _NO_JSON_SCHEMA_HOSTS):
+        logger.info(f"provider 不支持 json_schema，退到 json_object: {base}")
+        return "json_object"
+    return "json_schema"
 
 
 def build_graphiti_client() -> Graphiti:
