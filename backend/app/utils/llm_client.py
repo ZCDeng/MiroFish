@@ -135,10 +135,26 @@ class LLMClient:
         try:
             return json.loads(cleaned_response)
         except json.JSONDecodeError:
-            # 别把模型原文整段拼进异常 —— 它会被 api 层连同 traceback 一起
-            # 返回给浏览器，里面可能带着上传文档的片段
-            preview = cleaned_response[:200]
-            raise ValueError(
-                f"LLM返回的JSON格式无效（前200字符）: {preview}"
-            )
+            pass
+
+        # 模型写中文时常把 JSON 的定界引号打成全角：
+        #   {"headquarters": "旧金山“, ”year”: “2023”}
+        # 全角引号不是合法定界符，运气好直接 JSONDecodeError，运气不好会被后面
+        # 某个真引号闭合，解析「成功」但值里卷进了后半个对象（那种由
+        # utils/graphiti_attrs.clean_attr_value 在读取侧兜）。
+        # 这里只在严格解析已经失败之后才做替换，正常内容碰不到，
+        # 代价只是万一原文里真有全角引号会被改成半角 —— 比整个请求失败强。
+        repaired = cleaned_response.replace("“", '"').replace("”", '"')
+        if repaired != cleaned_response:
+            try:
+                parsed = json.loads(repaired)
+                logger.warning("模型返回的 JSON 用了全角引号，已修正后解析成功")
+                return parsed
+            except json.JSONDecodeError:
+                pass
+
+        # 别把模型原文整段拼进异常 —— 它会被 api 层连同 traceback 一起
+        # 返回给浏览器，里面可能带着上传文档的片段
+        preview = cleaned_response[:200]
+        raise ValueError(f"LLM返回的JSON格式无效（前200字符）: {preview}")
 
