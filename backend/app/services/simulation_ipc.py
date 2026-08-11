@@ -268,21 +268,48 @@ class SimulationIPCClient:
         )
     
     def check_env_alive(self) -> bool:
-        """
-        检查模拟环境是否存活
-        
-        通过检查 env_status.json 文件来判断
+        """检查模拟环境是否存活。
+
+        env_status.json 是模拟子进程自己写的，进程被 kill 时来不及改状态，
+        文件会一直留着 status=alive。光看文件的话，采访请求会发出去然后
+        干等到超时（默认 180 秒），报出来的还是「超时」而不是真实原因。
+        所以再校验一次 run_state 里记的 pid 是否真的还在。
         """
         status_file = os.path.join(self.simulation_dir, "env_status.json")
         if not os.path.exists(status_file):
             return False
-        
+
         try:
             with open(status_file, 'r', encoding='utf-8') as f:
                 status = json.load(f)
-            return status.get("status") == "alive"
+            if status.get("status") != "alive":
+                return False
         except (json.JSONDecodeError, OSError):
             return False
+
+        return self._owner_process_alive()
+
+    def _owner_process_alive(self) -> bool:
+        """run_state.json 里那个 pid 还在不在。读不到就按存活处理。"""
+        run_state = os.path.join(self.simulation_dir, "run_state.json")
+        try:
+            with open(run_state, 'r', encoding='utf-8') as f:
+                pid = json.load(f).get("process_pid")
+        except (json.JSONDecodeError, OSError, AttributeError):
+            # 拿不到 pid 就别拦，退回原来只看文件的行为
+            return True
+
+        if not pid:
+            return True
+
+        try:
+            os.kill(int(pid), 0)  # signal 0 只探测存在性，不发信号
+            return True
+        except (ProcessLookupError, ValueError, TypeError):
+            return False
+        except PermissionError:
+            # 进程存在但不属于当前用户
+            return True
 
 
 class SimulationIPCServer:

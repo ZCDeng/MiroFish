@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 from ..utils.llm_client import LLMClient
+from ..utils.file_parser import split_text_into_chunks
 from ..utils.locale import get_language_instruction
 from ..utils.ontology import normalize_ontology_attributes
 
@@ -224,6 +225,13 @@ class OntologyGenerator:
 
     # 传给 LLM 的文本最大长度（5万字）
     MAX_TEXT_LENGTH_FOR_LLM = 50000
+    # 超长文档改成全局等距抽样而不是只截开头。
+    # 本体定义决定后续抽什么实体，只看前 5 万字的话，一份长报告里
+    # 后半段出现的角色类型根本进不了本体，图谱会系统性偏。
+    LONG_TEXT_CHUNK_SIZE = 8000
+    LONG_TEXT_CHUNK_OVERLAP = 200
+    MAX_LONG_TEXT_CHUNKS = 60
+    MIN_LONG_TEXT_EXCERPT = 400
 
     def _build_user_message(
         self,
@@ -233,14 +241,7 @@ class OntologyGenerator:
     ) -> str:
         """构建用户消息"""
 
-        # 合并文本
-        combined_text = "\n\n---\n\n".join(document_texts)
-        original_length = len(combined_text)
-
-        # 如果文本超过5万字，截断（仅影响传给LLM的内容，不影响图谱构建）
-        if len(combined_text) > self.MAX_TEXT_LENGTH_FOR_LLM:
-            combined_text = combined_text[: self.MAX_TEXT_LENGTH_FOR_LLM]
-            combined_text += f"\n\n...(原文共{original_length}字，已截取前{self.MAX_TEXT_LENGTH_FOR_LLM}字用于本体分析)..."
+        combined_text = self._build_document_context(document_texts)
 
         message = f"""## 模拟需求
 
@@ -270,6 +271,142 @@ class OntologyGenerator:
 """
 
         return message
+
+    def _build_document_context(self, document_texts: List[str]) -> str:
+        """构建用于本体分析的文档上下文，长文本按全局分块抽样而不是只截取开头。"""
+
+        combined_text = "\n\n---\n\n".join(document_texts)
+        original_length = len(combined_text)
+
+        if original_length <= self.MAX_TEXT_LENGTH_FOR_LLM:
+            return combined_text
+
+        chunks = self._collect_document_chunks(document_texts)
+        if not chunks:
+            return ""
+
+        selected_chunks = self._select_representative_chunks(chunks)
+        excerpt_budget = self._calculate_excerpt_budget(len(selected_chunks))
+        context = self._render_chunked_context(
+            selected_chunks=selected_chunks,
+            original_length=original_length,
+            total_chunks=len(chunks),
+            excerpt_limit=excerpt_budget,
+        )
+
+        while len(context) > self.MAX_TEXT_LENGTH_FOR_LLM and excerpt_budget > self.MIN_LONG_TEXT_EXCERPT:
+            excerpt_budget = max(self.MIN_LONG_TEXT_EXCERPT, int(excerpt_budget * 0.85))
+            context = self._render_chunked_context(
+                selected_chunks=selected_chunks,
+                original_length=original_length,
+                total_chunks=len(chunks),
+                excerpt_limit=excerpt_budget,
+            )
+
+        if len(context) > self.MAX_TEXT_LENGTH_FOR_LLM:
+            marker = "\n\n...(分块上下文已压缩到本体分析长度限制内)..."
+            context = context[:self.MAX_TEXT_LENGTH_FOR_LLM - len(marker)] + marker
+
+        return context
+
+    def _collect_document_chunks(self, document_texts: List[str]) -> List[Dict[str, Any]]:
+        """按文档收集分块，保留文档和分块编号方便提示词定位。"""
+
+        all_chunks: List[Dict[str, Any]] = []
+        for doc_index, text in enumerate(document_texts, 1):
+            doc_chunks = split_text_into_chunks(
+                text,
+                chunk_size=self.LONG_TEXT_CHUNK_SIZE,
+                overlap=self.LONG_TEXT_CHUNK_OVERLAP,
+            )
+            total_doc_chunks = len(doc_chunks)
+            for chunk_index, chunk in enumerate(doc_chunks, 1):
+                all_chunks.append({
+                    "document_index": doc_index,
+                    "chunk_index": chunk_index,
+                    "total_document_chunks": total_doc_chunks,
+                    "text": chunk,
+                })
+
+        return all_chunks
+
+    def _select_representative_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """从全部分块中等距抽样，覆盖长文开头、中段和结尾。"""
+
+        if len(chunks) <= self.MAX_LONG_TEXT_CHUNKS:
+            return chunks
+
+        if self.MAX_LONG_TEXT_CHUNKS <= 1:
+            return [chunks[0]]
+
+        last_index = len(chunks) - 1
+        selected_indexes = {
+            round(i * last_index / (self.MAX_LONG_TEXT_CHUNKS - 1))
+            for i in range(self.MAX_LONG_TEXT_CHUNKS)
+        }
+        return [chunks[i] for i in sorted(selected_indexes)]
+
+    def _calculate_excerpt_budget(self, selected_count: int) -> int:
+        """根据选中的分块数量为每块分配字符预算。"""
+
+        header_budget = 600
+        chunk_header_budget = 120 * selected_count
+        available = max(
+            self.MIN_LONG_TEXT_EXCERPT * selected_count,
+            self.MAX_TEXT_LENGTH_FOR_LLM - header_budget - chunk_header_budget,
+        )
+        return max(self.MIN_LONG_TEXT_EXCERPT, available // max(selected_count, 1))
+
+    def _render_chunked_context(
+        self,
+        selected_chunks: List[Dict[str, Any]],
+        original_length: int,
+        total_chunks: int,
+        excerpt_limit: int,
+    ) -> str:
+        """渲染长文本分块上下文。"""
+
+        lines = [
+            (
+                f"【长文本自动分块摘要】原文共{original_length}字，"
+                f"已分为{total_chunks}个文本块用于全局覆盖分析。"
+            ),
+            (
+                f"以下展示其中{len(selected_chunks)}个代表性文本块的摘录，"
+                "覆盖开头、中段和结尾；请基于这些跨全文线索设计本体，不要只依赖第一段内容。"
+            ),
+        ]
+
+        for chunk in selected_chunks:
+            excerpt = self._excerpt_text(chunk["text"], excerpt_limit)
+            lines.append(
+                "\n".join([
+                    (
+                        f"--- 文档 {chunk['document_index']} / "
+                        f"分块 {chunk['chunk_index']}/{chunk['total_document_chunks']} ---"
+                    ),
+                    excerpt,
+                ])
+            )
+
+        return "\n\n".join(lines)
+
+    @staticmethod
+    def _excerpt_text(text: str, char_limit: int) -> str:
+        """长分块保留首尾，避免每个分块内部再次变成只看开头。"""
+
+        text = text.strip()
+        if len(text) <= char_limit:
+            return text
+
+        marker = "\n...(本分块中间内容省略)...\n"
+        if char_limit <= len(marker) + 20:
+            return text[:char_limit]
+
+        remaining = char_limit - len(marker)
+        head_len = remaining // 2
+        tail_len = remaining - head_len
+        return f"{text[:head_len].rstrip()}{marker}{text[-tail_len:].lstrip()}"
 
     def _validate_and_process(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """验证和后处理结果"""

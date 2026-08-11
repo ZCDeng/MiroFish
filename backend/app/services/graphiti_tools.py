@@ -916,7 +916,13 @@ class GraphitiToolsService:
             
             if not api_result.get("success", False):
                 error_msg = api_result.get("error", "未知错误")
-                result.summary = f"采访API调用失败: {error_msg}"
+                # 报告正文会引用 summary，所以这里必须说清是"采访没做成"
+                # 而不是"agent 没观点"，否则读报告的人会把工具故障当成结论。
+                logger.warning(f"采访失败，本节将缺少 agent 视角: {error_msg}")
+                result.summary = (
+                    f"⚠️ 未能采访到任何模拟 Agent，本节内容仅基于图谱检索。"
+                    f"原因：{error_msg}"
+                )
                 return result
             
             # SimulationRunner.interview_agents_batch 把 IPC 返回体整个放在 "result" 下

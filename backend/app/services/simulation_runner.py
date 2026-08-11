@@ -1546,7 +1546,11 @@ class SimulationRunner:
         ipc_client = SimulationIPCClient(sim_dir)
 
         if not ipc_client.check_env_alive():
-            raise ValueError(f"模拟环境未运行或已关闭，无法执行Interview: {simulation_id}")
+            raise ValueError(
+                f"模拟环境未运行，无法采访 agent（simulation_id={simulation_id}）。"
+                "采访通过 IPC 问活着的模拟子进程，模拟跑完后它会停在命令等待模式不退出，"
+                "但重启后端会经清理函数把它一起杀掉。重新 /start 一次即可。"
+            )
 
         logger.info(f"发送Interview命令: simulation_id={simulation_id}, agent_id={agent_id}, platform={platform}")
 
@@ -1608,7 +1612,11 @@ class SimulationRunner:
         ipc_client = SimulationIPCClient(sim_dir)
 
         if not ipc_client.check_env_alive():
-            raise ValueError(f"模拟环境未运行或已关闭，无法执行Interview: {simulation_id}")
+            raise ValueError(
+                f"模拟环境未运行，无法采访 agent（simulation_id={simulation_id}）。"
+                "采访通过 IPC 问活着的模拟子进程，模拟跑完后它会停在命令等待模式不退出，"
+                "但重启后端会经清理函数把它一起杀掉。重新 /start 一次即可。"
+            )
 
         logger.info(f"发送批量Interview命令: simulation_id={simulation_id}, count={len(interviews)}, platform={platform}")
 
