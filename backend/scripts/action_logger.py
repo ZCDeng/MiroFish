@@ -14,6 +14,7 @@
 
 import json
 import os
+import sys
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -138,24 +139,41 @@ class SimulationLogManager:
         self._setup_main_logger()
     
     def _setup_main_logger(self):
-        """设置主模拟日志"""
-        log_path = os.path.join(self.simulation_dir, "simulation.log")
-        
-        # 创建 logger
+        """设置主模拟日志。
+
+        simulation.log 只能有一个 writer。SimulationRunner 起子进程时已经用
+        open(..., 'w') 把这个文件当成了 stdout 和 stderr
+        （simulation_runner.py:432-433、468-469），所以这里再开一个
+        FileHandler(mode='w') 会变成两个各有偏移量的文件对象从 0 开始互相覆盖，
+        而且每条日志还会写两遍（一遍 FileHandler，一遍 StreamHandler 经 stdout
+        绕回同一个文件）。
+
+        判断依据是 stdout 有没有被重定向：
+        - 被重定向（由 runner 拉起）：只留 StreamHandler，内容自然落进文件
+        - 没被重定向（手工跑脚本调试）：自己开文件，否则什么都不留
+        """
         self._main_logger = logging.getLogger(f"simulation.{os.path.basename(self.simulation_dir)}")
         self._main_logger.setLevel(logging.INFO)
         self._main_logger.handlers.clear()
-        
-        # 文件处理器
-        file_handler = logging.FileHandler(log_path, encoding='utf-8', mode='w')
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        ))
-        self._main_logger.addHandler(file_handler)
-        
-        # 控制台处理器
+
+        stdout_is_tty = False
+        try:
+            stdout_is_tty = sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            pass
+
+        if stdout_is_tty:
+            # 独立运行：stdout 是终端，文件得自己写
+            log_path = os.path.join(self.simulation_dir, "simulation.log")
+            file_handler = logging.FileHandler(log_path, encoding='utf-8', mode='w')
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            ))
+            self._main_logger.addHandler(file_handler)
+
+        # 控制台处理器。被 runner 拉起时它就是唯一写进 simulation.log 的通道。
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         console_handler.setFormatter(logging.Formatter(
@@ -163,7 +181,7 @@ class SimulationLogManager:
             datefmt='%H:%M:%S'
         ))
         self._main_logger.addHandler(console_handler)
-        
+
         self._main_logger.propagate = False
     
     def get_twitter_logger(self) -> PlatformActionLogger:
